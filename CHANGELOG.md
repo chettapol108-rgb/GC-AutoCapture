@@ -9,15 +9,28 @@ an English description and a short Thai summary for everyone on the team.
 
 These changes describe the local working copy updated on 2026-10-29.
 They have not been committed or assigned a release version.
-SKU frame inference, Border visibility and order-aware naming passed seventeen Windows JScript mock integration test groups.
+SKU frame inference, Border visibility, flexible job names and export logs passed twenty-one Windows JScript mock integration test groups.
 Actual export in Illustrator 28.6.0 passed for the open `1028(M)-TT-N012-16-01.eps` job:
 four JPGs exported and visually checked, four empty positions skipped, document
 state restored and the source EPS file hash unchanged.
+The new native log and timestamp-free JPG names also passed a repeat Illustrator
+export at the current 96 DPI setting (four 268x749 images, four skipped positions).
 Contributors and commit/PR references must be filled in when the work is committed.
 
 รายการด้านล่างเป็นงานที่แก้ไว้ในเครื่อง ยังไม่ออกเวอร์ชัน ผ่านการทดสอบจำลองและส่งออกภาพจริง 4 ภาพจาก job N012-16 ใน Illustrator แล้ว
 
 ### Added / เพิ่ม
+
+- Write a UTF-8 `AutoCapture_Log_yyyymmdd_HHMMSS.txt` beside exported JPGs.
+  Record source, SKU, destination, settings, each completed image's local date/time,
+  work number, OID, file and bounds, skipped-frame reasons, errors and final counts.
+  Preserve partial progress and same-second logs; stop if logging fails.
+  - **ไทย:** เพิ่ม log รายรอบพร้อมเวลาที่ส่งออกแต่ละภาพเสร็จ เหตุผลที่ข้าม และสรุปผลย้อนหลัง
+- Accept job names with month/day (`MMDD`) and SKU as the minimum, such as
+  `1028-N012-16.eps`. Shift `(M)`/`(N)`, platform and set number are optional.
+  Preserve the complete SKU and original set suffix: `N012-16-01` stays `N012-16-01`
+  in exported JPG filenames and log references. Do not add a set if absent.
+  - **ไทย:** ไม่บังคับช่วงเวลา Platform หรือเลขชุดในชื่อ EPS
 
 - Hide every layer named `Border`, including sublayers, during export and restore
   each layer's original visibility after success or failure. Missing Border layers
@@ -47,16 +60,17 @@ Contributors and commit/PR references must be filled in when the work is committ
 
 ### Changed / ปรับปรุง
 
-- Export as `[SKU]_[Order ID]_[work number]_[YYYYMMDDHHmmss].jpg`.
-  Extract `N012-03` from job names such as `1028(M)-TT-N012-03-01.eps`.
+- Export as `[SKU with original set suffix]-[Order ID]-[work number].jpg`,
+  using hyphens between all filename parts; move export timestamps into the log.
+  Extract `N012-03-01` from job names such as `1028(M)-TT-N012-03-01.eps`.
   Read work numbers from Type object Names such as `N3-BC` in the `Name` layer
   at each export position, and pair with Type object Names in `OID`, counting
   bottom to top. Fall back to Type contents when the OID Name is empty, matching
   the Layers panel display in the real EPS. Preserve empty OID slots and long numeric IDs as strings.
   Skip missing or ambiguous metadata; report exported and skipped counts.
-  Read local time separately immediately before each image export.
-  - **ไทย:** ใช้ชื่อ SKU, เลขออเดอร์, ลำดับชิ้นงานอย่างน้อย 3 หลัก และเวลาส่งออกแต่ละภาพ โดยข้ามกรอบที่จับคู่ข้อมูลไม่ได้
-  - **Validation:** Seventeen Windows JScript mock integration test groups passed,
+  Read local completion time separately after each successful image export.
+  - **ไทย:** ใช้ชื่อ SKU, เลขออเดอร์ และลำดับชิ้นงานอย่างน้อย 3 หลัก โดยย้ายเวลาไปไว้ใน log และข้ามกรอบที่จับคู่ข้อมูลไม่ได้
+  - **Validation:** Twenty-one Windows JScript mock integration test groups passed,
     covering spatial matching, grouped stacking order, missing values, skipped
     numbering, long IDs, leading zeros, overlapping frames and year rollover.
 - Split the script into focused helper functions within a private scope, retaining

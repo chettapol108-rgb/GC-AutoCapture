@@ -15,7 +15,7 @@
         // ชื่อ Layer ที่ใช้เก็บกรอบ ต้องตรงตัว รวมถึงตัวพิมพ์เล็กและใหญ่
         frameLayerNames: ["กรอบ", "Layout"],
         // DPI เป้าหมาย: ค่า 72 ให้สเกล 100% หากต้องการภาพละเอียดขึ้นให้ปรับค่านี้
-        targetDPI: 72,
+        targetDPI: 96,
         // คุณภาพ JPG ตั้งได้ในช่วง 0–100
         jpegQuality: 100,
         // จำนวนหลักขั้นต่ำของลำดับชิ้นงาน เช่น N12-BC จะได้ 012
@@ -199,10 +199,20 @@
     }
 
     function getSku(documentName) {
-        // 1028(M)-TT-N012-03-01.eps -> N012-03; the final token is the set.
+        // MMDD and SKU are required; shift, platform and set are optional.
         var baseName = documentName.replace(/\.[^.]+$/, "");
-        var match = /^\d{4}\([A-Z]+\)-[A-Z0-9]+-([A-Z0-9]+(?:-[A-Z0-9]+)*)-\d+$/i.exec(baseName);
-        return match ? match[1] : "";
+        var match = /^(\d{2})(\d{2})(?:\([A-Z]+\))?-(?:[A-Z]+-)?([A-Z]+\d+(?:-[A-Z0-9]+)*)$/i.exec(baseName);
+        if (!match) {
+            return "";
+        }
+        var month = Number(match[1]);
+        var day = Number(match[2]);
+        var days = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        if (month < 1 || month > 12 || day < 1 || day > days[month - 1]) {
+            return "";
+        }
+        // Preserve the original set suffix: N012-16-01 stays N012-16-01.
+        return match[3];
     }
 
     function trimName(item) {
@@ -224,13 +234,18 @@
         return x >= bounds[0] && x < bounds[2] && y <= bounds[1] && y > bounds[3];
     }
 
-    function prepareExports(doc, frames) {
+    function prepareExports(doc, frames, skippedFrames) {
         var nameLayer = findNamedLayer(doc.layers, "Name");
         var oidLayer = findNamedLayer(doc.layers, "OID");
         var names = [];
         var orders = [];
         var exports = [];
+        skippedFrames = skippedFrames || [];
         if (!nameLayer || !oidLayer) {
+            for (var missing = 0; missing < frames.length; missing++) {
+                skippedFrames.push({ bounds: frames[missing].bounds, frame: missing + 1,
+                    reason: "Missing layer: " + (!nameLayer ? "Name " : "") + (!oidLayer ? "OID" : "") });
+            }
             return exports;
         }
         collectTextFrames(nameLayer, names);
@@ -262,13 +277,18 @@
                 number = value;
             }
             if (ambiguous || number === null || number > orders.length) {
+                skippedFrames.push({ bounds: frames[i].bounds, frame: i + 1, number: number,
+                    reason: ambiguous ? "Ambiguous or invalid work number / overlapping frames" :
+                        (number === null ? "No work number at export position" : "No matching OID slot") });
                 continue;
             }
             var orderId = getOrderId(orders[number - 1]);
             if (!/^\d+$/.test(orderId)) {
+                skippedFrames.push({ bounds: frames[i].bounds, frame: i + 1, number: number,
+                    reason: "Empty or invalid Order ID" });
                 continue;
             }
-            exports.push({ bounds: frames[i].bounds, number: number, orderId: orderId });
+            exports.push({ bounds: frames[i].bounds, frame: i + 1, number: number, orderId: orderId });
         }
         return exports;
     }
@@ -281,15 +301,55 @@
         return text;
     }
 
-    // สร้างชื่อไฟล์โดยใช้ SKU, Order ID, ลำดับชิ้นงาน และเวลาปัจจุบัน
+    // วันที่และเวลาบันทึกใน log แทนชื่อ JPG
     function createOutputFile(folder, sku, frame) {
-        // Capture local time separately immediately before each JPEG export.
-        var now = new Date();
-        var timestamp = padNumber(now.getFullYear(), 4) + padNumber(now.getMonth() + 1, 2) +
-            padNumber(now.getDate(), 2) + padNumber(now.getHours(), 2) +
-            padNumber(now.getMinutes(), 2) + padNumber(now.getSeconds(), 2);
-        return new File(folder + "/" + sku + "_" + frame.orderId + "_" +
-            padNumber(frame.number, CONFIG.fileNumberDigits) + "_" + timestamp + ".jpg");
+        return new File(folder + "/" + sku + "-" + frame.orderId + "-" +
+            padNumber(frame.number, CONFIG.fileNumberDigits) + ".jpg");
+    }
+
+    function formatDateTime(date, compact) {
+        var day = padNumber(date.getFullYear(), 4) + (compact ? "" : "-") +
+            padNumber(date.getMonth() + 1, 2) + (compact ? "" : "-") + padNumber(date.getDate(), 2);
+        var time = padNumber(date.getHours(), 2) + (compact ? "" : ":") +
+            padNumber(date.getMinutes(), 2) + (compact ? "" : ":") + padNumber(date.getSeconds(), 2);
+        return day + (compact ? "_" : " ") + time;
+    }
+
+    function appendLog(log, message, date) {
+        log.file.encoding = "UTF-8";
+        if (!log.file.open("a")) {
+            throw new Error("เปิด log ไม่สำเร็จ: " + log.file.fsName + " " + log.file.error);
+        }
+        try {
+            if (!log.file.writeln("[" + formatDateTime(date || new Date(), false) + "] " + message)) {
+                throw new Error("เขียน log ไม่สำเร็จ: " + log.file.fsName + " " + log.file.error);
+            }
+        } finally {
+            log.file.close();
+        }
+    }
+
+    function createLog(doc, folder, sku, total, planned, skipped) {
+        var started = new Date();
+        var stem = folder + "/AutoCapture_Log_" + formatDateTime(started, true);
+        var file = new File(stem + ".txt");
+        var duplicate = 2;
+        while (file.exists) {
+            file = new File(stem + "_" + padNumber(duplicate++, 2) + ".txt");
+        }
+        var source = doc.name;
+        try { source = doc.fullName.fsName; } catch (unsavedError) {}
+        var log = { file: file, total: total, planned: planned, skipped: skipped, exported: 0 };
+        appendLog(log, "START | Source=" + source + " | SKU=" + sku + " | Output=" + folder.fsName +
+            " | DPI=" + CONFIG.targetDPI + " | JPEG quality=" + CONFIG.jpegQuality +
+            " | Frames=" + total + " | Planned=" + planned + " | Skipped=" + skipped +
+            " | Times use the computer's local timezone", started);
+        return log;
+    }
+
+    function finishLog(log, status) {
+        appendLog(log, "END | Status=" + status + " | Frames=" + log.total + " | Exported=" + log.exported +
+            " | Skipped=" + log.skipped + " | Not exported=" + (log.planned - log.exported));
     }
 
     // เก็บ Border ทุกชั้น รวม sublayer ก่อนเริ่มเปลี่ยน visibility
@@ -345,7 +405,7 @@
     }
 
     // ส่งออกทีละกรอบ โดยเก็บสถานะเอกสารและคืนค่าผ่าน finally เสมอเมื่อเริ่มเปลี่ยนสถานะ
-    function exportFrames(doc, frameLayer, frames, folder, sku) {
+    function exportFrames(doc, frameLayer, frames, folder, sku, log) {
         var artboard = doc.artboards[CONFIG.exportArtboardIndex];
         // เก็บค่าก่อนแก้เอกสาร เพื่อใช้ทั้งเมื่อส่งออกสำเร็จและเมื่อเกิดข้อผิดพลาด
         var state = {
@@ -372,10 +432,17 @@
             for (var i = 0; i < frames.length; i++) {
                 // ย้ายและปรับขนาด Artboard ให้พอดีกับกรอบก่อนส่งออกแต่ละภาพ
                 artboard.artboardRect = frames[i].bounds;
-                doc.exportFile(createOutputFile(folder, sku, frames[i]), ExportType.JPEG, options);
+                var outputFile = createOutputFile(folder, sku, frames[i]);
+                doc.exportFile(outputFile, ExportType.JPEG, options);
+                log.exported++;
+                // Record completion time after Illustrator has written this JPEG.
+                appendLog(log, "EXPORTED | Frame=" + frames[i].frame + " | Work=" + frames[i].number +
+                    " | OID=" + frames[i].orderId + " | File=" + outputFile.fsName +
+                    " | Bounds=" + frames[i].bounds.join(","));
             }
         } catch (error) {
-            exportError = error;
+            exportError = new Error((typeof i === "number" && i < frames.length ?
+                "Frame=" + frames[i].frame + " Work=" + frames[i].number + " OID=" + frames[i].orderId + ": " : "") + error.message);
         } finally {
             restoreErrors = restoreDocumentState(doc, frameLayer, state);
         }
@@ -420,16 +487,13 @@
 
         var sku = getSku(doc.name);
         if (!sku) {
-            alert("ไม่พบ SKU ในชื่อเอกสาร ใช้รูปแบบ เช่น 1028(M)-TT-N012-03-01.eps");
+            alert("ไม่พบเดือน วัน และ SKU ในชื่อเอกสาร ใช้รูปแบบ เช่น 1028-N012-03.eps หรือ 1028-TT-N012-03-01.eps");
             return;
         }
         var totalFrames = frames.length;
-        frames = prepareExports(doc, frames);
+        var skippedFrames = [];
+        frames = prepareExports(doc, frames, skippedFrames);
         var skipped = totalFrames - frames.length;
-        if (frames.length === 0) {
-            alert("ข้ามการ export ทั้งหมด " + skipped + " รูป: ไม่พบลำดับชิ้นงานใน Layer 'Name' ที่จับคู่กับ Order ID ใน Layer 'OID' ได้");
-            return;
-        }
 
         // ให้ผู้ใช้เลือกปลายทางก่อนเริ่มเปลี่ยนสถานะเอกสาร
         var folder = Folder.selectDialog("เลือกโฟลเดอร์สำหรับบันทึกไฟล์ JPG", getDefaultFolder(doc));
@@ -438,8 +502,30 @@
             return;
         }
 
-        exportFrames(doc, frameLayer, frames, folder, sku);
-        alert("Export เสร็จสิ้นทั้งหมด " + frames.length + " รูป\nข้าม " + skipped + " รูป\nบันทึกที่: " + folder.fsName);
+        var log = createLog(doc, folder, sku, totalFrames, frames.length, skipped);
+        try {
+            for (var s = 0; s < skippedFrames.length; s++) {
+                var entry = skippedFrames[s];
+                appendLog(log, "SKIPPED | Frame=" + entry.frame + " | Work=" +
+                    (entry.number === undefined || entry.number === null ? "-" : entry.number) +
+                    " | Reason=" + entry.reason + " | Bounds=" + entry.bounds.join(","));
+            }
+            if (frames.length > 0) {
+                exportFrames(doc, frameLayer, frames, folder, sku, log);
+            }
+            finishLog(log, frames.length > 0 ? "SUCCESS" : "ALL_SKIPPED");
+        } catch (error) {
+            var message = error.message;
+            try {
+                appendLog(log, "ERROR | " + message);
+                finishLog(log, "FAILED");
+            } catch (logError) {
+                message += "\n" + logError.message;
+            }
+            throw new Error(message + "\nLog: " + log.file.fsName);
+        }
+        alert("Export เสร็จสิ้นทั้งหมด " + frames.length + " รูป\nข้ามพื้นที่ว่าง " + skipped +
+            " รูป\nบันทึกที่: " + folder.fsName + "\nLog: " + log.file.fsName);
     }
 
     // Keep application errors in one place, including failures before export.
