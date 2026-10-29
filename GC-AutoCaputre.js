@@ -18,8 +18,8 @@
         targetDPI: 72,
         // คุณภาพ JPG ตั้งได้ในช่วง 0–100
         jpegQuality: 100,
-        // จำนวนหลักขั้นต่ำของเลขท้ายชื่อไฟล์ เช่น 2 หลักจะเริ่มที่ 01
-        fileNumberDigits: 2,
+        // จำนวนหลักขั้นต่ำของลำดับชิ้นงาน เช่น N12-BC จะได้ 012
+        fileNumberDigits: 3,
         // ลำดับ Artboard ที่ใช้ส่งออก เริ่มนับจาก 0 และต้องมีอยู่ในเอกสาร
         exportArtboardIndex: 0,
         // Match a complete SKU token in the document name (case-insensitive).
@@ -164,15 +164,132 @@
         return options;
     }
 
-    // สร้างตำแหน่งไฟล์ในรูปแบบ ชื่อเอกสาร_เลขลำดับ.jpg โดยยังไม่เขียนไฟล์จริง
-    function createOutputFile(folder, baseName, number) {
-        var suffix = String(number);
-        // Minimum width only: 1000 must stay 1000, not wrap to 000.
-        // เติมศูนย์เฉพาะเมื่อจำนวนหลักยังไม่ครบ ห้ามตัดเลขเมื่อเกินจำนวนหลักที่ตั้งไว้
-        while (suffix.length < CONFIG.fileNumberDigits) {
-            suffix = "0" + suffix;
+    function findNamedLayer(layers, name) {
+        for (var i = 0; i < layers.length; i++) {
+            if (layers[i].name === name) {
+                return layers[i];
+            }
+            var nested = findNamedLayer(layers[i].layers || [], name);
+            if (nested) {
+                return nested;
+            }
         }
-        return new File(folder + "/" + baseName + "_" + suffix + ".jpg");
+        return null;
+    }
+
+    // Walk stacking order from top to bottom, including grouped Type objects.
+    function collectTextFrames(container, result) {
+        var items = container.pageItems || [];
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            // Some Illustrator collections expose descendants as well as children.
+            if (item.parent && item.parent !== container) {
+                continue;
+            }
+            if (item.typename === "TextFrame") {
+                result.push(item);
+            } else if (item.typename === "GroupItem") {
+                collectTextFrames(item, result);
+            }
+        }
+        var layers = container.layers || [];
+        for (var j = 0; j < layers.length; j++) {
+            collectTextFrames(layers[j], result);
+        }
+    }
+
+    function getSku(documentName) {
+        // 1028(M)-TT-N012-03-01.eps -> N012-03; the final token is the set.
+        var baseName = documentName.replace(/\.[^.]+$/, "");
+        var match = /^\d{4}\([A-Z]+\)-[A-Z0-9]+-([A-Z0-9]+(?:-[A-Z0-9]+)*)-\d+$/i.exec(baseName);
+        return match ? match[1] : "";
+    }
+
+    function trimName(item) {
+        // Work markers use explicit object Names such as N3-BC.
+        return String(item.name || "").replace(/^\s+|\s+$/g, "");
+    }
+
+    function getOrderId(item) {
+        // Illustrator displays contents in the Layers panel when Name is empty.
+        var name = trimName(item);
+        return name || String(item.contents || "").replace(/^\s+|\s+$/g, "");
+    }
+
+    function containsTextCenter(bounds, item) {
+        var textBounds = item.geometricBounds;
+        var x = (textBounds[0] + textBounds[2]) / 2;
+        var y = (textBounds[1] + textBounds[3]) / 2;
+        // Shared edges belong to the frame on the right / below.
+        return x >= bounds[0] && x < bounds[2] && y <= bounds[1] && y > bounds[3];
+    }
+
+    function prepareExports(doc, frames) {
+        var nameLayer = findNamedLayer(doc.layers, "Name");
+        var oidLayer = findNamedLayer(doc.layers, "OID");
+        var names = [];
+        var orders = [];
+        var exports = [];
+        if (!nameLayer || !oidLayer) {
+            return exports;
+        }
+        collectTextFrames(nameLayer, names);
+        collectTextFrames(oidLayer, orders);
+        // Bottommost Type is order 1. Keep empty slots to avoid shifting pairs.
+        orders.reverse();
+        for (var i = 0; i < frames.length; i++) {
+            var number = null;
+            var ambiguous = false;
+            for (var j = 0; j < names.length; j++) {
+                var match = /^N(\d+)(?:-|$)/i.exec(trimName(names[j]));
+                if (!match || !containsTextCenter(frames[i].bounds, names[j])) {
+                    continue;
+                }
+                var value = Number(match[1]);
+                if (!isFiniteNumber(value) || value < 1 || value > 9007199254740991) {
+                    ambiguous = true;
+                    continue;
+                }
+                if (number !== null && number !== value) {
+                    ambiguous = true;
+                }
+                // A marker inside overlapping frames cannot identify one export.
+                for (var k = 0; k < frames.length; k++) {
+                    if (k !== i && containsTextCenter(frames[k].bounds, names[j])) {
+                        ambiguous = true;
+                    }
+                }
+                number = value;
+            }
+            if (ambiguous || number === null || number > orders.length) {
+                continue;
+            }
+            var orderId = getOrderId(orders[number - 1]);
+            if (!/^\d+$/.test(orderId)) {
+                continue;
+            }
+            exports.push({ bounds: frames[i].bounds, number: number, orderId: orderId });
+        }
+        return exports;
+    }
+
+    function padNumber(number, digits) {
+        var text = String(number);
+        while (text.length < digits) {
+            text = "0" + text;
+        }
+        return text;
+    }
+
+    // สร้างชื่อไฟล์โดยใช้ SKU, Order ID, ลำดับชิ้นงาน และเวลาปัจจุบัน
+    function createOutputFile(folder, sku, frame) {
+        // Capture local time separately immediately before each JPEG export.
+        var now = new Date();
+        var timestamp = padNumber(now.getFullYear(), 4) + padNumber(now.getMonth() + 1, 2) +
+            padNumber(now.getDate(), 2) + padNumber(now.getHours(), 2) +
+            padNumber(now.getMinutes(), 2) + padNumber(now.getSeconds(), 2);
+        return new File(folder + "/" + sku + "_" + frame.orderId + "_" +
+            padNumber(frame.number, CONFIG.fileNumberDigits) + "_" + timestamp + ".jpg");
     }
 
     // เก็บ Border ทุกชั้น รวม sublayer ก่อนเริ่มเปลี่ยน visibility
@@ -228,7 +345,7 @@
     }
 
     // ส่งออกทีละกรอบ โดยเก็บสถานะเอกสารและคืนค่าผ่าน finally เสมอเมื่อเริ่มเปลี่ยนสถานะ
-    function exportFrames(doc, frameLayer, frames, folder) {
+    function exportFrames(doc, frameLayer, frames, folder, sku) {
         var artboard = doc.artboards[CONFIG.exportArtboardIndex];
         // เก็บค่าก่อนแก้เอกสาร เพื่อใช้ทั้งเมื่อส่งออกสำเร็จและเมื่อเกิดข้อผิดพลาด
         var state = {
@@ -238,8 +355,6 @@
             borderLayers: []
         };
         collectBorderLayers(doc.layers, state.borderLayers);
-        // ตัดเฉพาะนามสกุลสุดท้ายออก เช่น งาน.v2.eps จะเหลือ งาน.v2
-        var baseName = doc.name.replace(/\.[^.]+$/, "");
         var options = createExportOptions();
         var exportError = null;
         var restoreErrors = [];
@@ -257,7 +372,7 @@
             for (var i = 0; i < frames.length; i++) {
                 // ย้ายและปรับขนาด Artboard ให้พอดีกับกรอบก่อนส่งออกแต่ละภาพ
                 artboard.artboardRect = frames[i].bounds;
-                doc.exportFile(createOutputFile(folder, baseName, i + 1), ExportType.JPEG, options);
+                doc.exportFile(createOutputFile(folder, sku, frames[i]), ExportType.JPEG, options);
             }
         } catch (error) {
             exportError = error;
@@ -303,6 +418,19 @@
 
         appendSkuFrames(doc.name, frames);
 
+        var sku = getSku(doc.name);
+        if (!sku) {
+            alert("ไม่พบ SKU ในชื่อเอกสาร ใช้รูปแบบ เช่น 1028(M)-TT-N012-03-01.eps");
+            return;
+        }
+        var totalFrames = frames.length;
+        frames = prepareExports(doc, frames);
+        var skipped = totalFrames - frames.length;
+        if (frames.length === 0) {
+            alert("ข้ามการ export ทั้งหมด " + skipped + " รูป: ไม่พบลำดับชิ้นงานใน Layer 'Name' ที่จับคู่กับ Order ID ใน Layer 'OID' ได้");
+            return;
+        }
+
         // ให้ผู้ใช้เลือกปลายทางก่อนเริ่มเปลี่ยนสถานะเอกสาร
         var folder = Folder.selectDialog("เลือกโฟลเดอร์สำหรับบันทึกไฟล์ JPG", getDefaultFolder(doc));
         if (!folder) {
@@ -310,8 +438,8 @@
             return;
         }
 
-        exportFrames(doc, frameLayer, frames, folder);
-        alert("Export เสร็จสิ้นทั้งหมด " + frames.length + " รูป\nบันทึกที่: " + folder.fsName);
+        exportFrames(doc, frameLayer, frames, folder, sku);
+        alert("Export เสร็จสิ้นทั้งหมด " + frames.length + " รูป\nข้าม " + skipped + " รูป\nบันทึกที่: " + folder.fsName);
     }
 
     // Keep application errors in one place, including failures before export.

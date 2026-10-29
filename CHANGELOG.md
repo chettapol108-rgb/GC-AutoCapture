@@ -7,13 +7,15 @@ an English description and a short Thai summary for everyone on the team.
 
 ## Unreleased / ยังไม่ออกเวอร์ชัน
 
-These changes describe the local working copy reviewed on 2026-10-28 compared
-with commit `7285050`. They have not been committed or assigned a release version.
-SKU frame inference and Border visibility passed eight Windows JScript mock integration test groups.
-Actual rendering in Illustrator has not been tested.
+These changes describe the local working copy updated on 2026-10-29.
+They have not been committed or assigned a release version.
+SKU frame inference, Border visibility and order-aware naming passed seventeen Windows JScript mock integration test groups.
+Actual export in Illustrator 28.6.0 passed for the open `1028(M)-TT-N012-16-01.eps` job:
+four JPGs exported and visually checked, four empty positions skipped, document
+state restored and the source EPS file hash unchanged.
 Contributors and commit/PR references must be filled in when the work is committed.
 
-รายการด้านล่างเป็นงานที่แก้ไว้ในเครื่อง ยังไม่ออกเวอร์ชัน ทดสอบจำลองการเติมกรอบผ่านแล้ว แต่ยังไม่ได้ตรวจภาพจริงใน Illustrator
+รายการด้านล่างเป็นงานที่แก้ไว้ในเครื่อง ยังไม่ออกเวอร์ชัน ผ่านการทดสอบจำลองและส่งออกภาพจริง 4 ภาพจาก job N012-16 ใน Illustrator แล้ว
 
 ### Added / เพิ่ม
 
@@ -45,12 +47,21 @@ Contributors and commit/PR references must be filled in when the work is committ
 
 ### Changed / ปรับปรุง
 
+- Export as `[SKU]_[Order ID]_[work number]_[YYYYMMDDHHmmss].jpg`.
+  Extract `N012-03` from job names such as `1028(M)-TT-N012-03-01.eps`.
+  Read work numbers from Type object Names such as `N3-BC` in the `Name` layer
+  at each export position, and pair with Type object Names in `OID`, counting
+  bottom to top. Fall back to Type contents when the OID Name is empty, matching
+  the Layers panel display in the real EPS. Preserve empty OID slots and long numeric IDs as strings.
+  Skip missing or ambiguous metadata; report exported and skipped counts.
+  Read local time separately immediately before each image export.
+  - **ไทย:** ใช้ชื่อ SKU, เลขออเดอร์, ลำดับชิ้นงานอย่างน้อย 3 หลัก และเวลาส่งออกแต่ละภาพ โดยข้ามกรอบที่จับคู่ข้อมูลไม่ได้
+  - **Validation:** Seventeen Windows JScript mock integration test groups passed,
+    covering spatial matching, grouped stacking order, missing values, skipped
+    numbering, long IDs, leading zeros, overlapping frames and year rollover.
 - Split the script into focused helper functions within a private scope, retaining
   ES3 syntax for Adobe ExtendScript. Add English and Thai code comments.
   - **ไทย:** จัดระเบียบโค้ดและเพิ่มคำอธิบาย เพื่อให้ทีมแก้ไขต่อได้ง่าย
-- Change default output numbering from three digits to two:
-  `document_001.jpg` becomes `document_01.jpg`.
-  - **ไทย:** ชื่อภาพเริ่มที่ `_01` แทน `_001` ควรตรวจหากใช้งานต่อกับระบบอื่น
 
 ### Fixed / แก้ไข
 
