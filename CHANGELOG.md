@@ -23,25 +23,22 @@ Contributors and commit/PR references must be filled in when the work is committ
 
 ### Added / เพิ่ม
 
-- Add a ScriptUI dialog directly inside `GC-AutoCaputre.js` with multi-file EPS
-  browsing, folder scanning, pasted paths, optional subfolders, an output picker,
-  per-job results and overall/job progress showing frame, work number, OID and
-  output filename. Provide explicit modes for the currently open document or an
-  EPS queue, and allow stopping after the current job. Keep delivery as one
-  Illustrator script. Queue inputs use file/folder browsers or pasted paths.
-  - **ไทย:** เพิ่ม ScriptUI ในไฟล์เดิม เลือกส่งออกเอกสารปัจจุบันหรือคิว EPS วาง path เลือกปลายทาง และดู progress ราย Job โดยส่งต่อ `.js` ไฟล์เดียว
-  - **Limitation:** Progress updates occur between synchronous Illustrator calls.
+- Add a ScriptUI dialog directly inside `GC-AutoCaputre.js` with explicit modes
+  for the currently active EPS or a batch source folder. Batch mode recursively
+  discovers EPS files in all subfolders. Require an existing destination folder
+  for JPG and log output before processing can start.
+  - **ไทย:** เพิ่ม ScriptUI สำหรับ EPS ที่เปิดอยู่หรือ Batch จาก Folder/Subfolder และบังคับเลือก Folder ปลายทางก่อนเริ่ม
 - Write a UTF-8 `AutoCapture_Batch_*.txt` summary in the output folder alongside
-  existing per-job logs. Include open/validation failures, partial counts and jobs
-  not run; preserve previous logs and stop the queue on errors or log failures.
+  existing per-job logs. Create it before document validation or opening queued
+  files so runtime errors are recorded before an Error Alert. Preserve previous
+  logs and continue with later jobs after a per-job failure.
   Reuse already-open EPS documents. Open one queued EPS at a time, finish its
   export and close it without saving before opening the next file. Keep documents
   that were already open and restore the previously active document after the queue.
   - **ไทย:** เปิด EPS จากคิวครั้งละไฟล์ ส่งออกเสร็จแล้วปิดโดยไม่บันทึกก่อนเปิด Job ถัดไป และไม่ปิดเอกสารที่ผู้ใช้เปิดไว้ก่อน
-  - **Validation (2026-10-30):** Not tested. Test execution remains paused at the
-    user's request. Updated JScript mocks for ScriptUI; actual dialog interaction,
-    sequential open/close behavior, progress, stopping and EPS/JPG rendering in
-    Illustrator remain unverified.
+  - **Validation (2026-11-02):** Not tested. Static source and diff review only;
+    test files are absent. ScriptUI interaction, recursive discovery, sequential
+    open/close behavior and EPS/JPG rendering in Illustrator remain unverified.
 
 - Write a UTF-8 `AutoCapture_Log_yyyymmdd_HHMMSS.txt` beside exported JPGs.
   Record source, SKU, destination, settings, each completed image's local date/time,
@@ -81,6 +78,32 @@ Contributors and commit/PR references must be filled in when the work is committ
   - **ไทย:** เพิ่มประวัติการเปลี่ยนแปลงสองภาษาและแบบฟอร์มสำหรับทีม
 
 ### Changed / ปรับปรุง
+
+- Match each OID TextFrame to the export frame containing its geometric center
+  instead of building bottom-to-top OID slots and indexing them by work number.
+  Require one unambiguous OID TextFrame per frame, and accept work marker Names
+  with either a hyphen or underscore, such as `N1-BC` and `N1_BC`.
+  - **ไทย:** จับคู่ OID ตามตำแหน่งในกรอบโดยตรง ไม่ใช้ลำดับช่อง และรองรับชื่อชิ้นงานทั้ง `N1-BC` กับ `N1_BC`
+  - **Validation (2026-11-02):** Not tested. Test files are absent; static source
+    and diff review only. Illustrator position matching remains pending.
+
+- Parse the trailing job identifier as a four-character alphanumeric SKU, a
+  one-to-three-character alphanumeric format code and a required two-digit
+  sequence. Do not require or validate a month/day prefix. For example,
+  `1102(M)-SP-L007-N02-01.eps` is parsed as `SKU=L007`, `Format=N02` and
+  `Sequence=01`.
+  - **ไทย:** แยก SKU 4 ตัว รหัสรูปแบบ 1–3 ตัว และลำดับที่เลข 2 หลัก โดยไม่บังคับหรือตรวจเดือน/วันในชื่อไฟล์
+  - **Validation (2026-11-02):** Not tested. Static source and diff review only;
+    test files are absent. Illustrator validation remains pending.
+
+- Match frame Layer/Group names case-insensitively after trimming leading and
+  trailing whitespace from both document names and `CONFIG.frameLayerNames`.
+  Keep full-name matching, internal whitespace, punctuation and first-container
+  selection unchanged. Other layer-name rules are unaffected.
+  - **ไทย:** ชื่อกรอบรองรับตัวพิมพ์เล็ก–ใหญ่และช่องว่างหัวท้าย เช่น `CUTLINE` และ ` cutline ` โดยยังเทียบชื่อเต็ม
+  - **Validation (2026-11-02):** Not tested. Static source and diff review only;
+    test files are absent. Added manual matching cases to README; Illustrator
+    validation remains pending.
 
 - Remove `CONFIG.skuFrameRules`, `appendSkuFrames()` and its call. Detect export
   frames only from the first container matching `CONFIG.frameLayerNames`, using
