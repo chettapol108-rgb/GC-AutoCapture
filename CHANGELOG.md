@@ -7,7 +7,7 @@ an English description and a short Thai summary for everyone on the team.
 
 ## Unreleased / ยังไม่ออกเวอร์ชัน
 
-These changes describe the local working copy updated on 2026-10-29.
+These changes describe the local working copy updated on 2026-11-02.
 They have not been committed or assigned a release version.
 SKU frame inference, Border visibility, flexible job names and export logs passed twenty-one Windows JScript mock integration test groups.
 Actual export in Illustrator 28.6.0 passed for the open `1028(M)-TT-N012-16-01.eps` job:
@@ -15,11 +15,33 @@ four JPGs exported and visually checked, four empty positions skipped, document
 state restored and the source EPS file hash unchanged.
 The new native log and timestamp-free JPG names also passed a repeat Illustrator
 export at the current 96 DPI setting (four 268x749 images, four skipped positions).
+The historical checks above predate the new ScriptUI queue; ScriptUI validation
+is paused at the user's request and has not been run.
 Contributors and commit/PR references must be filled in when the work is committed.
 
-รายการด้านล่างเป็นงานที่แก้ไว้ในเครื่อง ยังไม่ออกเวอร์ชัน ผ่านการทดสอบจำลองและส่งออกภาพจริง 4 ภาพจาก job N012-16 ใน Illustrator แล้ว
+รายการด้านล่างเป็นงานที่แก้ไว้ในเครื่อง ยังไม่ออกเวอร์ชัน ผลทดสอบเดิมของ job N012-16 เป็นประวัติก่อนเพิ่ม ScriptUI ซึ่งยังพักการทดสอบตามคำขอของผู้ใช้
 
 ### Added / เพิ่ม
+
+- Add a ScriptUI dialog directly inside `GC-AutoCaputre.js` with multi-file EPS
+  browsing, folder scanning, pasted paths, optional subfolders, an output picker,
+  per-job results and overall/job progress showing frame, work number, OID and
+  output filename. Provide explicit modes for the currently open document or an
+  EPS queue, and allow stopping after the current job. Keep delivery as one
+  Illustrator script. Queue inputs use file/folder browsers or pasted paths.
+  - **ไทย:** เพิ่ม ScriptUI ในไฟล์เดิม เลือกส่งออกเอกสารปัจจุบันหรือคิว EPS วาง path เลือกปลายทาง และดู progress ราย Job โดยส่งต่อ `.js` ไฟล์เดียว
+  - **Limitation:** Progress updates occur between synchronous Illustrator calls.
+- Write a UTF-8 `AutoCapture_Batch_*.txt` summary in the output folder alongside
+  existing per-job logs. Include open/validation failures, partial counts and jobs
+  not run; preserve previous logs and stop the queue on errors or log failures.
+  Reuse already-open EPS documents. Open one queued EPS at a time, finish its
+  export and close it without saving before opening the next file. Keep documents
+  that were already open and restore the previously active document after the queue.
+  - **ไทย:** เปิด EPS จากคิวครั้งละไฟล์ ส่งออกเสร็จแล้วปิดโดยไม่บันทึกก่อนเปิด Job ถัดไป และไม่ปิดเอกสารที่ผู้ใช้เปิดไว้ก่อน
+  - **Validation (2026-10-30):** Not tested. Test execution remains paused at the
+    user's request. Updated JScript mocks for ScriptUI; actual dialog interaction,
+    sequential open/close behavior, progress, stopping and EPS/JPG rendering in
+    Illustrator remain unverified.
 
 - Write a UTF-8 `AutoCapture_Log_yyyymmdd_HHMMSS.txt` beside exported JPGs.
   Record source, SKU, destination, settings, each completed image's local date/time,
@@ -60,6 +82,32 @@ Contributors and commit/PR references must be filled in when the work is committ
 
 ### Changed / ปรับปรุง
 
+- Remove `CONFIG.skuFrameRules`, `appendSkuFrames()` and its call. Detect export
+  frames only from the first container matching `CONFIG.frameLayerNames`, using
+  the existing closed four-point PathItem filter with `height > 1` pt.
+  All SKUs, including `N012`, now require actual frames for every export area.
+  - **ไทย:** ยกเลิกการเติมกรอบทางขวาตาม SKU ใช้เฉพาะ Rectangle สูงกว่า 1 pt ที่พบจริงใน container ตามรายชื่อที่ตั้งไว้
+  - **Validation (2026-11-02):** Not tested. Static source and diff review only;
+    test files remain absent from the working tree. Actual Illustrator frame
+    detection and export remain unverified for this change.
+
+- Find the first Layer or Group, including nested containers, whose name matches
+  `CONFIG.frameLayerNames`. Collect closed four-point Rectangle paths with
+  `height > 1` from that container and its nested Groups/sublayers, and preserve
+  Layer or Group visibility while exporting.
+  - **ไทย:** หา Layer/Group ชื่อกรอบรวมระดับซ้อน และใช้เฉพาะ Rectangle เส้นปิด 4 จุดที่สูงกว่า 1 pt พร้อมคืนสถานะการแสดงเดิม
+  - **Validation (2026-10-30):** Automated tests could not be run because the test files are absent from the current working tree. Illustrator export remains unverified.
+- Separate the trailing set component from the SKU in the per-job log header;
+  for example, write `SKU=N012-11, Set=01` for the filename SKU `N012-11-01`.
+  Keep JPG filenames and SKU matching unchanged, and omit Set when absent.
+  - **ไทย:** แยกเลขชุดท้ายออกจาก SKU ในหัว log โดยไม่เปลี่ยนชื่อ JPG หรือกฎจับคู่ SKU
+  - **Validation (2026-10-30):** Automated tests and Illustrator export were not run.
+- Accept numeric and ASCII alphanumeric Order IDs containing at least one digit,
+  such as `123456` and `ABC123`. Export a matched work item with `EmptyOID` in
+  the JPG filename when its OID slot is empty or invalid instead of skipping it.
+  - **ไทย:** รองรับ OID แบบตัวเลขและอักษรอังกฤษผสมตัวเลข และใช้ `EmptyOID` เพื่อส่งออกภาพต่อเมื่อช่อง OID ว่างหรือไม่ถูกต้อง
+  - **Validation (2026-10-30):** Automated tests were not run because the test
+    files are absent from the current working tree. Illustrator export remains unverified.
 - Export as `[SKU with original set suffix]-[Order ID]-[work number].jpg`,
   using hyphens between all filename parts; move export timestamps into the log.
   Extract `N012-03-01` from job names such as `1028(M)-TT-N012-03-01.eps`.

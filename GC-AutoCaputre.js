@@ -12,8 +12,8 @@
     // Change project defaults here. Illustrator uses 72 points per inch.
     // รวมค่าที่นักพัฒนาปรับได้ไว้ที่นี่ โดย Illustrator ใช้หน่วยพื้นฐาน 72 points ต่อหนึ่งนิ้ว
     var CONFIG = {
-        // ชื่อ Layer ที่ใช้เก็บกรอบ ต้องตรงตัว รวมถึงตัวพิมพ์เล็กและใหญ่
-        frameLayerNames: ["กรอบ", "Layout"],
+        // ชื่อ Layer หรือ Group ที่ใช้เก็บกรอบ ต้องตรงตัว รวมถึงตัวพิมพ์เล็กและใหญ่
+        frameLayerNames: ["CutLine","กรอบ", "Layout", "FrameLine"],
         // DPI เป้าหมาย: ค่า 72 ให้สเกล 100% หากต้องการภาพละเอียดขึ้นให้ปรับค่านี้
         targetDPI: 96,
         // คุณภาพ JPG ตั้งได้ในช่วง 0–100
@@ -21,52 +21,90 @@
         // จำนวนหลักขั้นต่ำของลำดับชิ้นงาน เช่น N12-BC จะได้ 012
         fileNumberDigits: 3,
         // ลำดับ Artboard ที่ใช้ส่งออก เริ่มนับจาก 0 และต้องมีอยู่ในเอกสาร
-        exportArtboardIndex: 0,
-        // Match a complete SKU token in the document name (case-insensitive).
-        // เพิ่ม SKU ใหม่ที่นี่ ค่าระยะ/ขนาดเป็น points (72 pt = 1 inch)
-        skuFrameRules: {
-            N012: {
-                additionalFrames: 1,
-                // หากทราบจำนวนภาพทั้งหมด ให้ใส่แทน null เพื่อป้องกันการเพิ่มซ้ำ
-                expectedFrameCount: null,
-                width: null,       // null = ความกว้างกรอบสุดท้าย
-                height: null,      // null = ความสูงกรอบสุดท้าย
-                gap: 0,            // ระยะจากขอบขวาไปขอบซ้ายของกรอบใหม่
-                topOffset: 0       // บวก = เลื่อนขึ้น จากกรอบสุดท้ายที่มีจริง
-            }
-        }
+        exportArtboardIndex: 0
     };
 
-    function findFrameLayer(doc) {
-        // Preserve document order: use the first matching top-level layer.
-        // เลือก Layer ระดับบนสุดตัวแรกที่ชื่อตรง โดยยึดลำดับ Layer ในเอกสาร
-        // หากมีทั้งสองชื่อ จะใช้เพียง Layer ที่พบก่อน ไม่รวมกรอบจากหลาย Layer
-        for (var i = 0; i < doc.layers.length; i++) {
-            for (var j = 0; j < CONFIG.frameLayerNames.length; j++) {
-                if (doc.layers[i].name === CONFIG.frameLayerNames[j]) {
-                    return doc.layers[i];
+    function isFrameContainerName(name) {
+        for (var i = 0; i < CONFIG.frameLayerNames.length; i++) {
+            if (name === CONFIG.frameLayerNames[i]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function findFrameContainerIn(container) {
+        if (isFrameContainerName(container.name)) {
+            return container;
+        }
+        var layers = container.layers || [];
+        for (var i = 0; i < layers.length; i++) {
+            var nestedLayer = findFrameContainerIn(layers[i]);
+            if (nestedLayer) {
+                return nestedLayer;
+            }
+        }
+        var items = container.pageItems || [];
+        for (var j = 0; j < items.length; j++) {
+            var item = items[j];
+            if (item.parent && item.parent !== container) {
+                continue;
+            }
+            if (item.typename === "GroupItem") {
+                var nestedGroup = findFrameContainerIn(item);
+                if (nestedGroup) {
+                    return nestedGroup;
                 }
             }
         }
         return null;
     }
 
-    // รวบรวมพิกัดกรอบไว้ก่อนเปลี่ยน Artboard แล้วเรียงลำดับสำหรับตั้งชื่อไฟล์
-    function collectFrames(layer) {
-        var frames = [];
-        for (var i = 0; i < layer.pageItems.length; i++) {
-            var item = layer.pageItems[i];
-            // Preserve the original rule: every PathItem is a frame, even a
-            // non-rectangle. Groups and compound paths are not traversed.
-            // ใช้ PathItem ทุกตัวเป็นกรอบตามกฎเดิม แม้ไม่ใช่สี่เหลี่ยม
-            // ไม่ไล่ค้นวัตถุที่อยู่ภายใน Group หรือ Compound Path เพิ่มเติม
-            if (item.typename === "PathItem") {
-                frames.push({
-                    bounds: copyBounds(item.geometricBounds),
-                    sourceIndex: i
-                });
+    function findFrameContainer(doc) {
+        // Use only the first matching Layer or Group found in document order.
+        // ใช้ Layer หรือ Group แรกที่ชื่อตรง และไม่รวมกรอบจากหลาย container
+        for (var i = 0; i < doc.layers.length; i++) {
+            var container = findFrameContainerIn(doc.layers[i]);
+            if (container) {
+                return container;
             }
         }
+        return null;
+    }
+
+    function isRectangleFrame(item) {
+        return item.typename === "PathItem" && item.closed === true &&
+            item.pathPoints && item.pathPoints.length === 4 &&
+            isFiniteNumber(item.height) && item.height > 1;
+    }
+
+    function collectRectangleFrames(container, frames, sourceIndex) {
+        var items = container.pageItems || [];
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            // Illustrator Layer.pageItems may expose descendants as well.
+            if (item.parent && item.parent !== container) {
+                continue;
+            }
+            if (isRectangleFrame(item)) {
+                frames.push({
+                    bounds: copyBounds(item.geometricBounds),
+                    sourceIndex: sourceIndex.value++
+                });
+            } else if (item.typename === "GroupItem") {
+                collectRectangleFrames(item, frames, sourceIndex);
+            }
+        }
+        var layers = container.layers || [];
+        for (var j = 0; j < layers.length; j++) {
+            collectRectangleFrames(layers[j], frames, sourceIndex);
+        }
+    }
+
+    // รวบรวมพิกัดกรอบไว้ก่อนเปลี่ยน Artboard แล้วเรียงลำดับสำหรับตั้งชื่อไฟล์
+    function collectFrames(container) {
+        var frames = [];
+        collectRectangleFrames(container, frames, { value: 0 });
         frames.sort(function (a, b) {
             // Bounds are [left, top, right, bottom]. Break ties explicitly:
             // older ExtendScript engines do not guarantee a stable sort.
@@ -77,62 +115,20 @@
         return frames;
     }
 
-    function isFiniteNumber(value) {
-        return typeof value === "number" && isFinite(value);
+    function getFrameContainerVisibility(container) {
+        return container.typename === "Layer" ? container.visible : !container.hidden;
     }
 
-    // Infer only explicitly configured trailing frames; never create document paths.
-    // สร้างเฉพาะพิกัดสำหรับส่งออก ไม่เพิ่มวัตถุกรอบลงในเอกสาร
-    function appendSkuFrames(documentName, frames) {
-        var tokens = documentName.replace(/\.[^.]+$/, "").toUpperCase().split(/[^A-Z0-9]+/);
-        var rule = null;
-        var sku = "";
-        for (var key in CONFIG.skuFrameRules) {
-            if (!CONFIG.skuFrameRules.hasOwnProperty(key)) {
-                continue;
-            }
-            for (var i = 0; i < tokens.length; i++) {
-                if (tokens[i] === key.toUpperCase()) {
-                    if (rule && sku !== key) {
-                        throw new Error("พบหลาย SKU ในชื่อไฟล์ กรุณาระบุ SKU เดียว");
-                    }
-                    rule = CONFIG.skuFrameRules[key];
-                    sku = key;
-                    break;
-                }
-            }
+    function setFrameContainerVisibility(container, visible) {
+        if (container.typename === "Layer") {
+            container.visible = visible;
+        } else {
+            container.hidden = !visible;
         }
-        if (!rule) {
-            return;
-        }
-        var count = rule.additionalFrames;
-        if (rule.expectedFrameCount !== null) {
-            count = rule.expectedFrameCount;
-            if (!isFiniteNumber(count) || count < 1 || Math.floor(count) !== count) {
-                throw new Error("expectedFrameCount ไม่ถูกต้องสำหรับ " + sku);
-            }
-            count = Math.max(0, count - frames.length);
-        }
-        if (!isFiniteNumber(count) || count < 0 || Math.floor(count) !== count) {
-            throw new Error("additionalFrames ไม่ถูกต้องสำหรับ " + sku);
-        }
-        if (count === 0) {
-            return;
-        }
-        var reference = frames[frames.length - 1].bounds;
-        var width = rule.width === null ? reference[2] - reference[0] : rule.width;
-        var height = rule.height === null ? reference[1] - reference[3] : rule.height;
-        if (!isFiniteNumber(width) || width <= 0 || !isFiniteNumber(height) || height <= 0 ||
-                !isFiniteNumber(rule.gap) || !isFiniteNumber(rule.topOffset)) {
-            throw new Error("ขนาดหรือระยะกรอบไม่ถูกต้องสำหรับ " + sku);
-        }
-        var right = reference[2];
-        var top = reference[1] + rule.topOffset;
-        for (var n = 0; n < count; n++) {
-            var left = right + rule.gap;
-            right = left + width;
-            frames.push({ bounds: [left, top, right, top - height] });
-        }
+    }
+
+    function isFiniteNumber(value) {
+        return typeof value === "number" && isFinite(value);
     }
 
     // สร้างอาร์เรย์พิกัดชุดใหม่ เพื่อเก็บค่าแยกจากอาร์เรย์ที่อ่านจาก Illustrator
@@ -283,10 +279,10 @@
                 continue;
             }
             var orderId = getOrderId(orders[number - 1]);
-            if (!/^\d+$/.test(orderId)) {
-                skippedFrames.push({ bounds: frames[i].bounds, frame: i + 1, number: number,
-                    reason: "Empty or invalid Order ID" });
-                continue;
+            // OID may be numeric or ASCII letters mixed with numbers. Keep invalid
+            // values out of filenames, but still export the matched work item.
+            if (!/^[A-Z0-9]*\d[A-Z0-9]*$/i.test(orderId)) {
+                orderId = "EmptyOID";
             }
             exports.push({ bounds: frames[i].bounds, frame: i + 1, number: number, orderId: orderId });
         }
@@ -329,6 +325,14 @@
         }
     }
 
+    function splitSkuForLog(sku) {
+        var parts = sku.split("-");
+        if (parts.length < 3) {
+            return { sku: sku, set: "" };
+        }
+        return { sku: parts.slice(0, parts.length - 1).join("-"), set: parts[parts.length - 1] };
+    }
+
     function createLog(doc, folder, sku, total, planned, skipped) {
         var started = new Date();
         var stem = folder + "/AutoCapture_Log_" + formatDateTime(started, true);
@@ -340,7 +344,9 @@
         var source = doc.name;
         try { source = doc.fullName.fsName; } catch (unsavedError) {}
         var log = { file: file, total: total, planned: planned, skipped: skipped, exported: 0 };
-        appendLog(log, "START | Source=" + source + " | SKU=" + sku + " | Output=" + folder.fsName +
+        var skuInfo = splitSkuForLog(sku);
+        appendLog(log, "START | Source=" + source + " | SKU=" + skuInfo.sku +
+            (skuInfo.set ? ", Set=" + skuInfo.set : "") + " | Output=" + folder.fsName +
             " | DPI=" + CONFIG.targetDPI + " | JPEG quality=" + CONFIG.jpegQuality +
             " | Frames=" + total + " | Planned=" + planned + " | Skipped=" + skipped +
             " | Times use the computer's local timezone", started);
@@ -366,7 +372,7 @@
     }
 
     // คืนสถานะที่เก็บไว้ก่อนส่งออก และส่งรายการข้อผิดพลาดกลับให้ผู้เรียกจัดการ
-    function restoreDocumentState(doc, frameLayer, state) {
+    function restoreDocumentState(doc, frameContainer, state) {
         var errors = [];
         // Attempt every restoration even if an earlier one fails.
         // แยก try/catch เพื่อให้ยังพยายามคืนค่าอื่นต่อ แม้การคืนค่าก่อนหน้าจะล้มเหลว
@@ -377,10 +383,10 @@
             errors.push("Artboard: " + boundsError.message);
         }
         try {
-            // คืนการแสดงหรือซ่อน Layer ให้ตรงกับสถานะก่อนรัน
-            frameLayer.visible = state.frameVisible;
+            // คืนการแสดงหรือซ่อน Layer/Group ให้ตรงกับสถานะก่อนรัน
+            setFrameContainerVisibility(frameContainer, state.frameVisible);
         } catch (visibilityError) {
-            errors.push("Layer: " + visibilityError.message);
+            errors.push("Frame container: " + visibilityError.message);
         }
         for (var i = 0; i < state.borderLayers.length; i++) {
             try {
@@ -405,12 +411,12 @@
     }
 
     // ส่งออกทีละกรอบ โดยเก็บสถานะเอกสารและคืนค่าผ่าน finally เสมอเมื่อเริ่มเปลี่ยนสถานะ
-    function exportFrames(doc, frameLayer, frames, folder, sku, log) {
+    function exportFrames(doc, frameContainer, frames, folder, sku, log) {
         var artboard = doc.artboards[CONFIG.exportArtboardIndex];
         // เก็บค่าก่อนแก้เอกสาร เพื่อใช้ทั้งเมื่อส่งออกสำเร็จและเมื่อเกิดข้อผิดพลาด
         var state = {
             bounds: copyBounds(artboard.artboardRect),
-            frameVisible: frameLayer.visible,
+            frameVisible: getFrameContainerVisibility(frameContainer),
             activeArtboardIndex: doc.artboards.getActiveArtboardIndex(),
             borderLayers: []
         };
@@ -424,8 +430,8 @@
             // whose bounds we resize, then restore the user's selection.
             // การตัดขอบ JPG อิง Artboard ที่ active จึงต้องเลือกตัวเดียวกับที่ปรับขอบเขต
             doc.artboards.setActiveArtboardIndex(CONFIG.exportArtboardIndex);
-            // ซ่อนทั้ง Layer เพื่อไม่ให้เส้นกรอบติดไปในภาพที่ส่งออก
-            frameLayer.visible = false;
+            // ซ่อน Layer หรือ Group กรอบ เพื่อไม่ให้เส้นกรอบติดไปในภาพที่ส่งออก
+            setFrameContainerVisibility(frameContainer, false);
             for (var b = 0; b < state.borderLayers.length; b++) {
                 state.borderLayers[b].layer.visible = false;
             }
@@ -444,7 +450,7 @@
             exportError = new Error((typeof i === "number" && i < frames.length ?
                 "Frame=" + frames[i].frame + " Work=" + frames[i].number + " OID=" + frames[i].orderId + ": " : "") + error.message);
         } finally {
-            restoreErrors = restoreDocumentState(doc, frameLayer, state);
+            restoreErrors = restoreDocumentState(doc, frameContainer, state);
         }
 
         // Preserve the export failure if cleanup also fails. Show success only
@@ -463,7 +469,7 @@
         }
     }
 
-    // ลำดับหลัก: ตรวจเอกสาร → หา Layer และกรอบ → เลือกปลายทาง → ส่งออก
+    // ลำดับหลัก: ตรวจเอกสาร → หา Layer/Group และกรอบ → เลือกปลายทาง → ส่งออก
     function run() {
         if (app.documents.length === 0) {
             alert("กรุณาเปิดเอกสารใน Illustrator ก่อนรันสคริปต์");
@@ -471,19 +477,17 @@
         }
 
         var doc = app.activeDocument;
-        var frameLayer = findFrameLayer(doc);
-        if (!frameLayer) {
-            alert("ไม่พบ Layer ที่ชื่อ " + CONFIG.frameLayerNames.join(" หรือ ") + " ในไฟล์นี้");
+        var frameContainer = findFrameContainer(doc);
+        if (!frameContainer) {
+            alert("ไม่พบ Layer หรือ Group ที่ชื่อ " + CONFIG.frameLayerNames.join(" หรือ ") + " ในไฟล์นี้");
             return;
         }
 
-        var frames = collectFrames(frameLayer);
+        var frames = collectFrames(frameContainer);
         if (frames.length === 0) {
-            alert("ไม่พบ PathItem สำหรับใช้เป็นกรอบใน Layer '" + frameLayer.name + "'");
+            alert("ไม่พบ Rectangle ที่มี Height มากกว่า 1 สำหรับใช้เป็นกรอบใน '" + frameContainer.name + "'");
             return;
         }
-
-        appendSkuFrames(doc.name, frames);
 
         var sku = getSku(doc.name);
         if (!sku) {
@@ -511,7 +515,7 @@
                     " | Reason=" + entry.reason + " | Bounds=" + entry.bounds.join(","));
             }
             if (frames.length > 0) {
-                exportFrames(doc, frameLayer, frames, folder, sku, log);
+                exportFrames(doc, frameContainer, frames, folder, sku, log);
             }
             finishLog(log, frames.length > 0 ? "SUCCESS" : "ALL_SKIPPED");
         } catch (error) {
