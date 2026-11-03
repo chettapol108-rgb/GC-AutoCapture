@@ -22,6 +22,8 @@
         fileNumberDigits: 3,
         // ลำดับ Artboard ที่ใช้ส่งออก เริ่มนับจาก 0 และต้องมีอยู่ในเอกสาร
         exportArtboardIndex: 0,
+        // ชื่อ Folder ที่ใช้เก็บ JPG และ log จริง หากเลือก Folder อื่นจะสร้าง Folder นี้ภายใน
+        outputFolderName: ".AutoCapture",
         // ความกว้างของช่อง path ใน ScriptUI
         uiWidth: 520
     };
@@ -323,10 +325,16 @@
         return text;
     }
 
-    // วันที่และเวลาบันทึกใน log แทนชื่อ JPG
+    // วันที่และเวลาบันทึกใน log แทนชื่อ JPG และเก็บ JPG เดิมไว้เมื่อชื่อซ้ำ
     function createOutputFile(folder, sku, frame) {
-        return new File(folder + "/" + sku + "-" + frame.orderId + "-" +
-            padNumber(frame.number, CONFIG.fileNumberDigits) + ".jpg");
+        var stem = folder + "/" + sku + "-" + frame.orderId + "-" +
+            padNumber(frame.number, CONFIG.fileNumberDigits);
+        var file = new File(stem + ".jpg");
+        var duplicate = 2;
+        while (file.exists) {
+            file = new File(stem + "_" + padNumber(duplicate++, 2) + ".jpg");
+        }
+        return file;
     }
 
     function formatDateTime(date, compact) {
@@ -602,6 +610,20 @@
         } catch (colorError) {}
     }
 
+    function ensureOutputFolder(selectedFolder) {
+        var destination = selectedFolder;
+        if (String(selectedFolder.name) !== CONFIG.outputFolderName) {
+            destination = new Folder(selectedFolder.fsName + "/" + CONFIG.outputFolderName);
+            if (!destination.exists && !destination.create()) {
+                throw new Error("สร้าง Folder ปลายทางไม่สำเร็จ: " + destination.fsName + " " + destination.error);
+            }
+        }
+        if (!destination.exists) {
+            throw new Error("Folder ปลายทางไม่มีอยู่จริง: " + destination.fsName);
+        }
+        return destination;
+    }
+
     function showCaptureDialog() {
         var dialog = new Window("dialog", "GC-AutoCapture");
         dialog.orientation = "column";
@@ -665,8 +687,8 @@
             }
         };
         startButton.onClick = function () {
-            var destination = new Folder(destinationPath.text);
-            if (!destinationPath.text || !destination.exists) {
+            var selectedDestination = new Folder(destinationPath.text);
+            if (!destinationPath.text || !selectedDestination.exists) {
                 setUiError(status, "กรุณาเลือก Folder ปลายทางที่มีอยู่จริง");
                 return;
             }
@@ -682,6 +704,13 @@
                 return;
             } else if (!/\.eps$/i.test(app.activeDocument.name)) {
                 setUiError(status, "เอกสารที่เปิดอยู่ปัจจุบันไม่ใช่ไฟล์ EPS");
+                return;
+            }
+            var destination = null;
+            try {
+                destination = ensureOutputFolder(selectedDestination);
+            } catch (folderError) {
+                setUiError(status, folderError.message);
                 return;
             }
             selection = {
