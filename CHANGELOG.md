@@ -79,6 +79,24 @@ Contributors and commit/PR references must be filled in when the work is committ
 
 ### Changed / ปรับปรุง
 
+- Require one outer work Group from Layer `Name` at each export frame. Do not
+  count nested Groups inside a work item. Match OID TextFrames spatially and use
+  `EmptyOID` when the OID layer, TextFrame or valid value is missing. Skip frames
+  without work Groups or with ambiguous Group/OID matches; retain positional numbers.
+  - **ไทย:** ใช้ Group ใน `Name` ยืนยันจำนวนชิ้นงาน กรอบที่ไม่มีชิ้นงานไม่ส่งออก และตำแหน่งที่ OID ขาดหรือว่างใช้ `EmptyOID`
+  - **Validation (2026-11-03):** Not tested. Static source and diff review only;
+    test files are absent. Added manual cases for four work Groups with three OIDs,
+    extra empty frames, nested Groups, missing layers and ambiguous matches.
+    Group bounds and JPG rendering require verification in Illustrator.
+
+- Number exported JPGs by the frame position after sorting left to right, starting
+  at one, instead of reading work numbers from TextFrame Names in Layer `Name`.
+  Keep each frame's positional number when an earlier frame is skipped, require
+  only Layer `OID` for metadata matching, and label the value as `Position` in logs.
+  - **ไทย:** ใช้เลขลำดับกรอบจากซ้ายไปขวาแทนเลขชิ้นงาน ไม่ต้องมี Layer `Name` และกรอบที่ถูกข้ามไม่ทำให้เลขตำแหน่งถัดไปเลื่อน
+  - **Validation (2026-11-03):** Not tested. Static source and diff review only;
+    test files are absent. Positional numbering and Illustrator export remain unverified.
+
 - Match each OID TextFrame to the export frame containing its geometric center
   instead of building bottom-to-top OID slots and indexing them by work number.
   Require one unambiguous OID TextFrame per frame, and accept work marker Names
