@@ -13,12 +13,12 @@
     // รวมค่าที่นักพัฒนาปรับได้ไว้ที่นี่ โดย Illustrator ใช้หน่วยพื้นฐาน 72 points ต่อหนึ่งนิ้ว
     var CONFIG = {
         // ชื่อ Layer หรือ Group กรอบ เทียบชื่อเต็มโดยไม่แยกตัวพิมพ์และตัดช่องว่างหัวท้าย
-        frameLayerNames: ["CutLine","Cut-Line","กรอบ", "Layout", "FrameLine"],
+        frameLayerNames: ["CutLine","Cut-Line","กรอบ", "Layout", "FrameLine", "NAME", "Name"],
         // DPI เป้าหมาย: ค่า 72 ให้สเกล 100% หากต้องการภาพละเอียดขึ้นให้ปรับค่านี้
         targetDPI: 120,
         // คุณภาพ JPG ตั้งได้ในช่วง 0–100
         jpegQuality: 100,
-        // จำนวนหลักขั้นต่ำของลำดับชิ้นงาน เช่น N12-BC จะได้ 012
+        // จำนวนหลักขั้นต่ำของลำดับตำแหน่ง เช่น ตำแหน่ง 12 จะได้ 012
         fileNumberDigits: 3,
         // ลำดับ Artboard ที่ใช้ส่งออก เริ่มนับจาก 0 และต้องมีอยู่ในเอกสาร
         exportArtboardIndex: 0,
@@ -202,6 +202,24 @@
         }
     }
 
+    function collectWorkGroups(container, result) {
+        var items = container.pageItems || [];
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            if (item.parent && item.parent !== container) {
+                continue;
+            }
+            // One outer Group represents one work item; do not count its children.
+            if (item.typename === "GroupItem") {
+                result.push(item);
+            }
+        }
+        var layers = container.layers || [];
+        for (var j = 0; j < layers.length; j++) {
+            collectWorkGroups(layers[j], result);
+        }
+    }
+
     function getSku(documentName) {
         // Validate only the trailing SKU, format code and sequence. Date,
         // shift and platform prefixes are not required or interpreted here.
@@ -215,7 +233,7 @@
     }
 
     function trimName(item) {
-        // Work markers use explicit object Names such as N3-BC or N3_BC.
+        // Object Names may contain accidental whitespace in the Layers panel.
         return String(item.name || "").replace(/^\s+|\s+$/g, "");
     }
 
@@ -236,47 +254,46 @@
     function prepareExports(doc, frames, skippedFrames) {
         var nameLayer = findNamedLayer(doc.layers, "Name");
         var oidLayer = findNamedLayer(doc.layers, "OID");
-        var names = [];
+        var workGroups = [];
         var oidItems = [];
         var exports = [];
         skippedFrames = skippedFrames || [];
-        if (!nameLayer || !oidLayer) {
+        if (!nameLayer) {
             for (var missing = 0; missing < frames.length; missing++) {
                 skippedFrames.push({ bounds: frames[missing].bounds, frame: missing + 1,
-                    reason: "Missing layer: " + (!nameLayer ? "Name " : "") + (!oidLayer ? "OID" : "") });
+                    number: missing + 1, reason: "Missing layer: Name" });
             }
             return exports;
         }
-        collectTextFrames(nameLayer, names);
-        collectTextFrames(oidLayer, oidItems);
+        collectWorkGroups(nameLayer, workGroups);
+        if (oidLayer) {
+            collectTextFrames(oidLayer, oidItems);
+        }
         for (var i = 0; i < frames.length; i++) {
-            var number = null;
-            var ambiguous = false;
-            for (var j = 0; j < names.length; j++) {
-                var match = /^N(\d+)(?:[-_]|$)/i.exec(trimName(names[j]));
-                if (!match || !containsTextCenter(frames[i].bounds, names[j])) {
+            // Frames are already sorted left to right. Keep this positional number
+            // even when an earlier frame is skipped so filenames stay tied to layout.
+            var number = i + 1;
+
+            var workGroup = null;
+            var ambiguousWork = false;
+            for (var groupIndex = 0; groupIndex < workGroups.length; groupIndex++) {
+                if (!containsTextCenter(frames[i].bounds, workGroups[groupIndex])) {
                     continue;
                 }
-                var value = Number(match[1]);
-                if (!isFiniteNumber(value) || value < 1 || value > 9007199254740991) {
-                    ambiguous = true;
-                    continue;
+                if (workGroup !== null) {
+                    ambiguousWork = true;
                 }
-                if (number !== null && number !== value) {
-                    ambiguous = true;
-                }
-                // A marker inside overlapping frames cannot identify one export.
-                for (var k = 0; k < frames.length; k++) {
-                    if (k !== i && containsTextCenter(frames[k].bounds, names[j])) {
-                        ambiguous = true;
+                for (var otherFrame = 0; otherFrame < frames.length; otherFrame++) {
+                    if (otherFrame !== i && containsTextCenter(frames[otherFrame].bounds, workGroups[groupIndex])) {
+                        ambiguousWork = true;
                     }
                 }
-                number = value;
+                workGroup = workGroups[groupIndex];
             }
-            if (ambiguous || number === null) {
+            if (ambiguousWork || workGroup === null) {
                 skippedFrames.push({ bounds: frames[i].bounds, frame: i + 1, number: number,
-                    reason: ambiguous ? "Ambiguous or invalid work number / overlapping frames" :
-                        "No work number at export position" });
+                    reason: ambiguousWork ? "Ambiguous Name groups / overlapping frames" :
+                        "No Name group at export position" });
                 continue;
             }
 
@@ -297,16 +314,16 @@
                 }
                 orderItem = oidItems[orderIndex];
             }
-            if (ambiguousOrder || orderItem === null) {
+            if (ambiguousOrder) {
                 skippedFrames.push({ bounds: frames[i].bounds, frame: i + 1, number: number,
-                    reason: ambiguousOrder ? "Ambiguous OID / overlapping frames" :
-                        "No OID at export position" });
+                    reason: "Ambiguous OID / overlapping frames" });
                 continue;
             }
 
-            var orderId = getOrderId(orderItem);
+            // A confirmed Name group still exports when its OID object is missing.
+            var orderId = orderItem === null ? "" : getOrderId(orderItem);
             // OID may be numeric or ASCII letters mixed with numbers. Keep invalid
-            // values out of filenames, but still export the matched work item.
+            // values out of filenames, but still export the matched frame.
             if (!/^[A-Z0-9]*\d[A-Z0-9]*$/i.test(orderId)) {
                 orderId = "EmptyOID";
             }
@@ -469,13 +486,13 @@
                 doc.exportFile(outputFile, ExportType.JPEG, options);
                 log.exported++;
                 // Record completion time after Illustrator has written this JPEG.
-                appendLog(log, "EXPORTED | Frame=" + frames[i].frame + " | Work=" + frames[i].number +
+                appendLog(log, "EXPORTED | Frame=" + frames[i].frame + " | Position=" + frames[i].number +
                     " | OID=" + frames[i].orderId + " | File=" + outputFile.fsName +
                     " | Bounds=" + frames[i].bounds.join(","));
             }
         } catch (error) {
             exportError = new Error((typeof i === "number" && i < frames.length ?
-                "Frame=" + frames[i].frame + " Work=" + frames[i].number + " OID=" + frames[i].orderId + ": " : "") + error.message);
+                "Frame=" + frames[i].frame + " Position=" + frames[i].number + " OID=" + frames[i].orderId + ": " : "") + error.message);
         } finally {
             restoreErrors = restoreDocumentState(doc, frameContainer, state);
         }
@@ -519,7 +536,7 @@
         try {
             for (var s = 0; s < skippedFrames.length; s++) {
                 var entry = skippedFrames[s];
-                appendLog(log, "SKIPPED | Frame=" + entry.frame + " | Work=" +
+                appendLog(log, "SKIPPED | Frame=" + entry.frame + " | Position=" +
                     (entry.number === undefined || entry.number === null ? "-" : entry.number) +
                     " | Reason=" + entry.reason + " | Bounds=" + entry.bounds.join(","));
             }
@@ -551,8 +568,8 @@
         return file;
     }
 
-    function createBatchLog(folder, mode) {
-        var log = { file: createUniqueLogFile(folder, "AutoCapture_Batch_") };
+    function createMasterLog(folder, mode) {
+        var log = { file: createUniqueLogFile(folder, "AutoCapture_MASTER_") };
         appendLog(log, "START | Mode=" + mode + " | Output=" + folder.fsName);
         return log;
     }
@@ -607,36 +624,36 @@
         dialog.orientation = "column";
         dialog.alignChildren = "fill";
 
-        var modePanel = dialog.add("panel", undefined, "โหมดการทำงาน");
+        var modePanel = dialog.add("panel", undefined, "Mode Selection");
         modePanel.orientation = "column";
         modePanel.alignChildren = "left";
-        var openMode = modePanel.add("radiobutton", undefined, "EPS ที่เปิดอยู่ปัจจุบัน");
-        var batchMode = modePanel.add("radiobutton", undefined, "Batch: EPS ทั้งหมดใน Folder และ Subfolder");
+        var openMode = modePanel.add("radiobutton", undefined, "Current EPS / ไฟล์ที่กำลังใช้งาน:");
+        var batchMode = modePanel.add("radiobutton", undefined, "Batch Processing / ทำงานกับหลายไฟล์ EPS:");
         var hasOpenEps = app.documents.length > 0 && /\.eps$/i.test(app.activeDocument.name);
         openMode.value = hasOpenEps;
         batchMode.value = !openMode.value;
         openMode.enabled = hasOpenEps;
 
-        var sourcePanel = dialog.add("panel", undefined, "EPS files (Batch)");
+        var sourcePanel = dialog.add("panel", undefined, "Source Folder / โฟลเดอร์ ต้นทาง:");
         sourcePanel.orientation = "row";
         sourcePanel.alignChildren = ["fill", "center"];
         var sourcePath = sourcePanel.add("edittext", undefined, "");
         sourcePath.preferredSize.width = CONFIG.uiWidth;
         var sourceBrowse = sourcePanel.add("button", undefined, "Browse...");
 
-        var destinationPanel = dialog.add("panel", undefined, "Folder ปลายทาง (Output และ Log)");
+        var destinationPanel = dialog.add("panel", undefined, "Destination Folder / โฟลเดอร์ ปลายทาง:");
         destinationPanel.orientation = "row";
         destinationPanel.alignChildren = ["fill", "center"];
         var destinationPath = destinationPanel.add("edittext", undefined, "");
         destinationPath.preferredSize.width = CONFIG.uiWidth;
         var destinationBrowse = destinationPanel.add("button", undefined, "Browse...");
 
-        var status = dialog.add("statictext", undefined, "ต้องเลือก Folder ปลายทางก่อนเริ่มทำงาน");
+        var status = dialog.add("statictext", undefined, "ต้องระบุ Folder ปลายทางก่อน เริ่มทำงาน");
         status.characters = 80;
         var buttons = dialog.add("group");
         buttons.alignment = "right";
-        var startButton = buttons.add("button", undefined, "เริ่มส่งออก");
-        var cancelButton = buttons.add("button", undefined, "ยกเลิก", { name: "cancel" });
+        var startButton = buttons.add("button", undefined, "START");
+        var cancelButton = buttons.add("button", undefined, "Cancel", { name: "cancel" });
         var selection = null;
 
         function updateMode() {
@@ -647,7 +664,7 @@
         updateMode();
 
         sourceBrowse.onClick = function () {
-            var selected = Folder.selectDialog("เลือก Folder ที่ต้องการค้นหา EPS รวม Subfolder");
+            var selected = Folder.selectDialog("เลือก Folder ที่มีไฟล์ EPS");
             if (selected) {
                 sourcePath.text = selected.fsName;
             }
@@ -659,7 +676,7 @@
             } else if (app.documents.length > 0) {
                 initial = getDefaultFolder(app.activeDocument);
             }
-            var selected = Folder.selectDialog("เลือก Folder ปลายทางสำหรับ Output และ Log", initial);
+            var selected = Folder.selectDialog("เลือก Folder ปลายทาง", initial);
             if (selected) {
                 destinationPath.text = selected.fsName;
             }
@@ -667,21 +684,21 @@
         startButton.onClick = function () {
             var destination = new Folder(destinationPath.text);
             if (!destinationPath.text || !destination.exists) {
-                setUiError(status, "กรุณาเลือก Folder ปลายทางที่มีอยู่จริง");
+                setUiError(status, "ไม่พบ Folder ปลายทางที่ระบุ กรุณาเลือกใหม่อีกครั้ง");
                 return;
             }
             var source = null;
             if (batchMode.value) {
                 source = new Folder(sourcePath.text);
                 if (!sourcePath.text || !source.exists) {
-                    setUiError(status, "กรุณาเลือก Folder ต้นทางที่มีอยู่จริงสำหรับ Batch");
+                    setUiError(status, "ไม่พบ Folder ต้นทาง สำหรับ Batch Processing กรุณาเลือกใหม่อีกครั้ง");
                     return;
                 }
             } else if (app.documents.length === 0) {
-                setUiError(status, "ไม่พบ EPS ที่เปิดอยู่ใน Illustrator");
+                setUiError(status, "ไม่พบ EPS ที่กำลังเปิดใช้งานใน Illustrator");
                 return;
             } else if (!/\.eps$/i.test(app.activeDocument.name)) {
-                setUiError(status, "เอกสารที่เปิดอยู่ปัจจุบันไม่ใช่ไฟล์ EPS");
+                setUiError(status, "เอกสารที่เปิดอยู่ปัจจุบันไม่ใช่ไฟล์ EPS (.eps)");
                 return;
             }
             selection = {
@@ -696,7 +713,7 @@
         return dialog.show() === 1 ? selection : null;
     }
 
-    function runSelectionWithLog(selection, batchLog) {
+    function runSelectionWithLog(selection, masterLog) {
         var files = [];
         var completed = 0;
         var failed = 0;
@@ -710,11 +727,11 @@
         } else {
             collectEpsFiles(selection.source, files);
             sortFilesByPath(files);
-            appendLog(batchLog, "DISCOVERED | Source=" + selection.source.fsName + " | EPS files=" + files.length);
+            appendLog(masterLog, "DISCOVERED | Source=" + selection.source.fsName + " | EPS files=" + files.length);
             if (files.length === 0) {
                 failed = 1;
                 firstError = "ไม่พบไฟล์ EPS ใน Folder หรือ Subfolder ที่เลือก";
-                appendLog(batchLog, "ERROR | " + firstError);
+                appendLog(masterLog, "ERROR | " + firstError);
             }
         }
 
@@ -734,12 +751,12 @@
                         doc.activate();
                     }
                 }
-                appendLog(batchLog, "JOB START | " + sourceName);
+                appendLog(masterLog, "JOB START | " + sourceName);
                 var result = executeJob(doc, selection.destination);
                 completed++;
                 exported += result.exported;
                 skipped += result.skipped;
-                appendLog(batchLog, "JOB END | Status=SUCCESS | Source=" + sourceName +
+                appendLog(masterLog, "JOB END | Status=SUCCESS | Source=" + sourceName +
                     " | Exported=" + result.exported + " | Skipped=" + result.skipped +
                     " | Log=" + result.logFile.fsName);
             } catch (jobError) {
@@ -747,7 +764,7 @@
                 if (!firstError) {
                     firstError = sourceName + ": " + jobError.message;
                 }
-                appendLog(batchLog, "ERROR | Source=" + sourceName + " | " + jobError.message);
+                appendLog(masterLog, "ERROR | Source=" + sourceName + " | " + jobError.message);
             } finally {
                 if (openedByScript && doc) {
                     try {
@@ -757,7 +774,7 @@
                         if (!firstError) {
                             firstError = sourceName + ": ปิด EPS ไม่สำเร็จ: " + closeError.message;
                         }
-                        appendLog(batchLog, "ERROR | Source=" + sourceName + " | Close failed: " + closeError.message);
+                        appendLog(masterLog, "ERROR | Source=" + sourceName + " | Close failed: " + closeError.message);
                     }
                 }
             }
@@ -771,33 +788,33 @@
                 if (!firstError) {
                     firstError = "คืนเอกสารเดิมไม่สำเร็จ: " + activateError.message;
                 }
-                appendLog(batchLog, "ERROR | Restore active document: " + activateError.message);
+                appendLog(masterLog, "ERROR | Restore active document: " + activateError.message);
             }
         }
-        appendLog(batchLog, "END | Status=" + (failed > 0 ? "FAILED" : "SUCCESS") +
+        appendLog(masterLog, "END | Status=" + (failed > 0 ? "FAILED" : "SUCCESS") +
             " | Jobs=" + files.length + " | Completed=" + completed + " | Failed=" + failed +
             " | Exported=" + exported + " | Skipped=" + skipped);
 
         if (failed > 0) {
-            throw new Error("พบข้อผิดพลาด " + failed + " รายการ\n" + firstError + "\nBatch log: " + batchLog.file.fsName);
+            throw new Error("พบข้อผิดพลาด " + failed + " รายการ\n" + firstError + "\nMaster Log: " + masterLog.file.fsName);
         }
-        alert("Export เสร็จสิ้น\nJobs: " + completed + "\nJPG: " + exported + "\nข้าม: " + skipped +
-            "\nปลายทาง: " + selection.destination.fsName + "\nBatch log: " + batchLog.file.fsName);
+        alert("!! Auto Capture เสร็จสิ้น !!\n\nJobs: " + " งาน" + completed + "\nOutput: " + exported + " รูป" + "\nEmpty: " + skipped +
+            "\n\nFolder ปลายทาง: \n" + selection.destination.fsName + "\n\nLog Folder: \n" + masterLog.file.fsName);
     }
 
     function runSelection(selection) {
-        var batchLog = createBatchLog(selection.destination, selection.mode);
+        var masterLog = createMasterLog(selection.destination, selection.mode);
         try {
-            runSelectionWithLog(selection, batchLog);
+            runSelectionWithLog(selection, masterLog);
         } catch (error) {
             var message = error.message;
             try {
-                appendLog(batchLog, "ALERT ERROR | " + message);
+                appendLog(masterLog, "ALERT ERROR | " + message);
             } catch (logError) {
-                message += "\nเขียน Batch log เพิ่มเติมไม่สำเร็จ: " + logError.message;
+                message += "\nเขียน Master log เพิ่มเติมไม่สำเร็จ: " + logError.message;
             }
-            if (message.indexOf(batchLog.file.fsName) < 0) {
-                message += "\nBatch log: " + batchLog.file.fsName;
+            if (message.indexOf(masterLog.file.fsName) < 0) {
+                message += "\nMaster log: " + masterLog.file.fsName;
             }
             throw new Error(message);
         }
@@ -811,6 +828,6 @@
             runSelection(selection);
         }
     } catch (error) {
-        alert("เกิดข้อผิดพลาด: " + error.message);
+        alert("ERROR: " + error.message);
     }
 }());
