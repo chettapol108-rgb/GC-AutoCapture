@@ -7,7 +7,7 @@ an English description and a short Thai summary for everyone on the team.
 
 ## Unreleased / ยังไม่ออกเวอร์ชัน
 
-These changes describe the local working copy updated on 2026-11-02.
+These changes describe the local working copy updated on 2026-11-03.
 They have not been committed or assigned a release version.
 SKU frame inference, Border visibility, flexible job names and export logs passed twenty-one Windows JScript mock integration test groups.
 Actual export in Illustrator 28.6.0 passed for the open `1028(M)-TT-N012-16-01.eps` job:
@@ -22,6 +22,15 @@ Contributors and commit/PR references must be filled in when the work is committ
 รายการด้านล่างเป็นงานที่แก้ไว้ในเครื่อง ยังไม่ออกเวอร์ชัน ผลทดสอบเดิมของ job N012-16 เป็นประวัติก่อนเพิ่ม ScriptUI ซึ่งยังพักการทดสอบตามคำขอของผู้ใช้
 
 ### Added / เพิ่ม
+
+- Add configurable `CONFIG.outputFolderName` with `.AutoCapture` as the default.
+  Use a selected folder directly when its name matches; otherwise create and use
+  an `.AutoCapture` child folder for JPG, per-job logs and the batch log. Preserve
+  an existing JPG by adding `_02`, `_03` and later suffixes to duplicate names.
+  - **ไทย:** บังคับให้ผลลัพธ์อยู่ใน Folder `.AutoCapture` ที่ปรับชื่อได้ และเติมเลขท้ายเมื่อชื่อ JPG ซ้ำแทนการเขียนทับ
+  - **Validation (2026-11-03):** Not tested. Static source and diff review only;
+    test files are absent. Folder creation and duplicate JPG export in Illustrator
+    remain unverified.
 
 - Add a ScriptUI dialog directly inside `GC-AutoCaputre.js` with explicit modes
   for the currently active EPS or a batch source folder. Batch mode recursively

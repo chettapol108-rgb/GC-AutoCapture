@@ -325,6 +325,19 @@
         return text;
     }
 
+    function ensureOrderFolder(folder, orderId) {
+        // orderId ผ่านการตรวจใน prepareExports() แล้ว และคงเป็น string เพื่อรักษาศูนย์นำหน้า
+        var destination = new Folder(folder.fsName + "/" + orderId);
+        if (!destination.exists && !destination.create()) {
+            throw new Error("สร้าง Folder สำหรับ OID=" + orderId + " ไม่สำเร็จ: " +
+                destination.fsName + " " + destination.error);
+        }
+        if (!destination.exists) {
+            throw new Error("ไม่พบ Folder สำหรับ OID=" + orderId + ": " + destination.fsName);
+        }
+        return destination;
+    }
+
     // วันที่และเวลาบันทึกใน log แทนชื่อ JPG และเก็บ JPG เดิมไว้เมื่อชื่อซ้ำ
     function createOutputFile(folder, sku, frame) {
         var stem = folder + "/" + sku + "-" + frame.orderId + "-" +
@@ -471,9 +484,10 @@
                 state.borderLayers[b].layer.visible = false;
             }
             for (var i = 0; i < frames.length; i++) {
+                var orderFolder = ensureOrderFolder(folder, frames[i].orderId);
+                var outputFile = createOutputFile(orderFolder, sku, frames[i]);
                 // ย้ายและปรับขนาด Artboard ให้พอดีกับกรอบก่อนส่งออกแต่ละภาพ
                 artboard.artboardRect = frames[i].bounds;
-                var outputFile = createOutputFile(folder, sku, frames[i]);
                 doc.exportFile(outputFile, ExportType.JPEG, options);
                 log.exported++;
                 // Record completion time after Illustrator has written this JPEG.
@@ -517,7 +531,7 @@
 
         var sku = getSku(doc.name);
         if (!sku) {
-            throw new Error("ไม่พบรหัสท้ายชื่อเอกสารในรูปแบบ SKU 4 ตัว-รหัสรูปแบบ 1 ถึง 3 ตัว-ลำดับที่ 2 หลัก เช่น N012-11-01.eps หรือ 1102(M)-SP-L007-N02-01.eps");
+            throw new Error("\nไม่พบรหัส SKU ในชื่อไฟล์\n[ตัวอักษร 4 ตัว]-[รหัสรูปแบบ 1-3 หลัก]-[ลำดับ 2 หลัก] \nตัวอย่าง N012-11-01.eps หรือ L007-N02-01.eps");
         }
         var totalFrames = frames.length;
         var skippedFrames = [];
