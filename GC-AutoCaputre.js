@@ -1,4 +1,4 @@
-// #target illustrator
+#target illustrator
 
 /**
  * GC-AutoCapture: export frame bounds from an active EPS or a folder of EPS files.
@@ -25,8 +25,8 @@
         // ลำดับ Artboard ที่ใช้ส่งออก เริ่มนับจาก 0 และต้องมีอยู่ในเอกสาร
         exportArtboardIndex: 0,
         // ชื่อ Folder ที่ใช้เก็บ JPG และ log จริง หากเลือก Folder อื่นจะสร้าง Folder นี้ภายใน
-        outputFolderName: ".AutoCapture",
-        // outputFolderName: "",
+        // outputFolderName: ".AutoCapture",
+        outputFolderName: "",
         // Font required for Type markers whose object names end in -BC or _BC.
         barcodeFontFamily: "Libre Barcode 128 Text",
         barcodeFontStyle: "Regular",
@@ -399,6 +399,31 @@
         return text;
     }
 
+    function getJobDateFolderName(dateText, currentDate) {
+        if (!/^\d{4}(?:\([A-Z]\))?$/i.test(dateText || "")) {
+            throw new Error("ไม่พบ DATE แบบ MMDD ในชื่อ EPS: " + (dateText || "-"));
+        }
+        var month = Number(dateText.substring(0, 2));
+        var day = Number(dateText.substring(2, 4));
+        var year = currentDate.getFullYear();
+        var date = new Date(year, month - 1, day);
+        if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+            throw new Error("DATE ในชื่อ EPS ไม่ใช่วันที่จริง: " + dateText);
+        }
+        return padNumber(year, 4) + "-" + padNumber(month, 2) + "-" + padNumber(day, 2);
+    }
+
+    function ensureDateFolder(folder, dateFolderName) {
+        var destination = new Folder(folder.fsName + "/" + dateFolderName);
+        if (!destination.exists && !destination.create()) {
+            throw new Error("สร้าง Folder สำหรับ DATE ไม่สำเร็จ: " + destination.fsName + " " + destination.error);
+        }
+        if (!destination.exists) {
+            throw new Error("ไม่พบ Folder สำหรับ DATE: " + destination.fsName);
+        }
+        return destination;
+    }
+
     function ensureOrderFolder(folder, orderId) {
         // orderId ผ่านการตรวจใน prepareExports() แล้ว และคงเป็น string เพื่อรักษาศูนย์นำหน้า
         var destination = new Folder(folder.fsName + "/" + orderId);
@@ -600,6 +625,7 @@
         if (!sku) {
             throw new Error("\nไม่พบรหัส SKU ในชื่อไฟล์\nต้องมี SKU เป็นตัวอักษรอังกฤษ 1 ตัวตามด้วยเลข 3 หลัก\nตัวอย่าง N012.eps, N012-A.eps, N012-01.eps หรือ L007-N02-01.eps");
         }
+        var dateFolderName = getJobDateFolderName(info.date, new Date());
         var totalFrames = frames.length;
         var skippedFrames = [];
         frames = prepareExports(doc, frames, skippedFrames);
@@ -622,7 +648,8 @@
                 " | Y=" + entry.bounds[1] + " | Bounds=" + entry.bounds.join(","));
         }
         if (frames.length > 0) {
-            exportFrames(doc, frameContainer, frames, folder, sku, log, updateStatus);
+            var dateFolder = ensureDateFolder(folder, dateFolderName);
+            exportFrames(doc, frameContainer, frames, dateFolder, sku, log, updateStatus);
         }
         return frames.length > 0 ? "SUCCESS" : "ALL_SKIPPED";
     }
@@ -785,7 +812,7 @@
 
     function ensureOutputFolder(selectedFolder) {
         var destination = selectedFolder;
-        if (String(selectedFolder.name) !== CONFIG.outputFolderName) {
+        if (CONFIG.outputFolderName && String(selectedFolder.name) !== CONFIG.outputFolderName) {
             destination = new Folder(selectedFolder.fsName + "/" + CONFIG.outputFolderName);
             if (!destination.exists && !destination.create()) {
                 throw new Error("สร้าง Folder ปลายทางไม่สำเร็จ: " + destination.fsName + " " + destination.error);
@@ -800,7 +827,7 @@
 
     function showCaptureDialog() {
         //Version: เวอร์ชัน
-        var dialog = new Window("dialog", "AutoCapture v1.0.0-beta.1");
+        var dialog = new Window("dialog", "AutoCapture v1.0.0");
         dialog.orientation = "column";
         dialog.alignChildren = "fill";
 
