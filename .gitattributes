@@ -1,0 +1,12 @@
+# Default: normalize text files to LF
+* text=auto
+
+# Markdown and JavaScript
+*.md text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+
+# Windows scripts
+*.bat text eol=crlf
+*.cmd text eol=crlf

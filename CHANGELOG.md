@@ -23,6 +23,52 @@ Contributors and commit/PR references must be filled in when the work is committ
 
 ### Added / เพิ่ม
 
+- Add `HANDOFF.md` as a state map and issue knowledge base with evidence,
+  resolution history, pending Illustrator checks and a reusable handoff template.
+  - **ไทย:** เพิ่มคลังสมองสำหรับส่งต่อ state ปัญหา วิธีแก้ หลักฐาน และงานที่ยังต้องตรวจ
+  - **Validation (2026-11-10):** Not tested. Documentation and diff review only.
+
+- Add Select all and Select some radio buttons to the Batch source folder panel.
+  Default to Select all and gray out the entire Optional range panel. Select some
+  enables START EPS and END EPS; switching back ignores their retained values
+  and includes all discovered EPS files.
+  - **ไทย:** เลือกทุกไฟล์เป็นค่าเริ่มต้น และเปิดช่องช่วงไฟล์ทั้ง panel เมื่อเลือก Select some เท่านั้น
+  - **Validation (2026-11-10):** Not tested. Static source and diff review only;
+    Illustrator ScriptUI interaction remains unverified.
+
+- Show every discovered Batch EPS in a scrollable, read-only text list. Indent
+  folders by level and draw `├─` / `└─` only on EPS files under the same folder.
+  Users can drag to select and copy filenames directly in the list. Mark files
+  inside the optional START EPS / END EPS range and refresh on selection changes.
+  - **ไทย:** เยื้องชื่อ Folder ตามระดับ และใช้เส้นกิ่งเฉพาะไฟล์ EPS ใต้ Folder เดียวกัน พร้อมลากเมาส์คัดลอกได้
+  - **Validation (2026-11-10):** Not tested. Static source and diff review only;
+    Illustrator ScriptUI selection and scrolling remain unverified.
+
+- Show the total EPS count in a selected Batch source folder and its subfolders.
+  Allow optional inclusive START EPS and END EPS filenames to select a range in
+  sorted path order; show the selected count and reject missing, duplicate or
+  reversed boundaries before export. Keep START available after each run so the
+  same ScriptUI dialog can process another selection with a new log.
+  - **ไทย:** แสดงจำนวน EPS ทั้งหมดและจำนวนในช่วงที่เลือก กำหนดไฟล์เริ่ม/จบได้ และกด START รอบใหม่ในหน้าต่างเดิมได้
+  - **Validation (2026-11-09):** Not tested. Static source and diff review only;
+    Illustrator ScriptUI and Batch export remain unverified.
+
+- Parse the open or queued EPS filename into string fields for FN, DATE, SHOP,
+  SKU, format and sequence. Show Job, FN, DATE, SHOP, combined SKU and No., and
+  the current step in a persistent ScriptUI diagnostic panel. Record FN, DATE
+  and SHOP in the job log; keep existing JPG naming rules.
+  - **ไทย:** แยกค่าชื่อ EPS และแสดงสถานะ Job ปัจจุบันใน ScriptUI พร้อมบันทึก FN, DATE และ SHOP ใน log
+  - **Validation (2026-11-09):** Not tested. Static source and diff review only;
+    Illustrator UI and export remain unverified.
+
+
+- Accept named Group items in the `Name` layer as positional markers, including
+  nested Groups. Use each Group's geometric center like a Type marker; keep OID
+  matching limited to TextFrames. Unnamed Groups are traversed for nested markers.
+  - **ไทย:** ใช้ Group ที่ตั้งชื่อไว้ใน `Name` เป็นจุดระบุตำแหน่งได้ แม้งานถูกแปลงเป็นเส้นแล้ว
+  - **Validation (2026-11-05):** Not tested. Static source and diff review only;
+    Illustrator export and mock tests have not been run for this change.
+
 - Add configurable `CONFIG.outputFolderName` with `.AutoCapture` as the default.
   Use a selected folder directly when its name matches; otherwise create and use
   an `.AutoCapture` child folder for JPG, per-job logs and the batch log. Preserve
@@ -40,7 +86,8 @@ Contributors and commit/PR references must be filled in when the work is committ
 - Write a UTF-8 `AutoCapture_Batch_*.txt` summary in the output folder alongside
   existing per-job logs. Create it before document validation or opening queued
   files so runtime errors are recorded before an Error Alert. Preserve previous
-  logs and continue with later jobs after a per-job failure.
+  logs and continue with later jobs after a per-job failure. This two-log format
+  is superseded by the single-log change under Changed below.
   Reuse already-open EPS documents. Open one queued EPS at a time, finish its
   export and close it without saving before opening the next file. Keep documents
   that were already open and restore the previously active document after the queue.
@@ -87,6 +134,45 @@ Contributors and commit/PR references must be filled in when the work is committ
   - **ไทย:** เพิ่มประวัติการเปลี่ยนแปลงสองภาษาและแบบฟอร์มสำหรับทีม
 
 ### Changed / ปรับปรุง
+
+- Show the current Batch Job as its position within the selected EPS range over
+  the selected count, starting at 1 when START EPS selects a later file.
+  Give the Current Step label enough width for updated status text.
+  - **ไทย:** ช่อง Job แสดงลำดับไฟล์ที่กำลังรันเทียบกับ EPS ที่เลือก และขยายช่อง Current Step เพื่อไม่ให้ข้อความถูกตัด
+  - **Validation (2026-11-10):** Not tested. Static source and diff review only;
+    Illustrator ScriptUI rendering remains unverified.
+
+- Require every character of a `Name`/`NAME` Type marker whose object name ends
+  in `-BC` or `_BC` (case-insensitive) to use Libre Barcode 128 Text Regular.
+  Skip its frame with a log reason when the font is wrong or cannot be checked;
+  other Type and Group markers keep their existing rules.
+  - **ไทย:** Type marker ชื่อท้าย BC ต้องใช้ฟอนต์บาร์โค้ดที่กำหนดทุกตัวอักษร มิฉะนั้นข้ามกรอบและบันทึกเหตุผล
+  - **Validation (2026-11-09):** Not tested. Static source and diff review only;
+    Illustrator font detection and JPG export remain unverified.
+
+- Sort export frames by their top Y coordinate from top to bottom, then by left
+  X from left to right when Y matches, so numbering proceeds one row at a time.
+  Keep collection order only when both coordinates match. Include each frame's
+  top-left X/Y in exported and skipped log entries.
+  - **ไทย:** เรียงกรอบจากแถวบนลงล่าง และจากซ้ายไปขวาในแถวเดียวกัน พร้อมบันทึก X/Y ใน log
+  - **Validation (2026-11-07):** Not tested. Static source and diff review only;
+    Illustrator export and the absent mock test suite remain unverified.
+
+- Use each export frame's original left-to-right position as the JPG suffix and
+  `Work` log value. Keep a Type object in `Name` as a positional marker, but do
+  not parse or validate digits after `N` in its object name. A skipped frame does
+  not renumber later frames; OID matching remains positional.
+  - **ไทย:** เลขท้าย JPG และ `Work` ใช้ลำดับกรอบเดิม ชื่อ Type ใน `Name` ไม่ต้องมีเลขหลัง `N` แต่ยังต้องมี Type อยู่ในกรอบ
+  - **Validation (2026-11-04):** Not tested. Static source and diff review only;
+    Illustrator export and filename behavior remain unverified.
+
+- Write one UTF-8 `AutoCapture_Log_YYYYMMDD_HHMMSS.txt` per run for both open EPS
+  and Batch modes. Include queue events, per-job settings, exported and skipped
+  frames, errors, per-job results and final totals in that file. Preserve existing
+  logs with numbered suffixes and stop the queue if log writing fails.
+  - **ไทย:** รวม log ทั้งรอบและรายละเอียดทุก Job ไว้ไฟล์เดียวต่อการกดเริ่มส่งออก
+  - **Validation (2026-11-04):** Not tested. Static source and diff review only;
+    Illustrator interaction and export remain unverified.
 
 - Match each OID TextFrame to the export frame containing its geometric center
   instead of building bottom-to-top OID slots and indexing them by work number.
@@ -158,6 +244,65 @@ Contributors and commit/PR references must be filled in when the work is committ
   - **ไทย:** จัดระเบียบโค้ดและเพิ่มคำอธิบาย เพื่อให้ทีมแก้ไขต่อได้ง่าย
 
 ### Fixed / แก้ไข
+
+- Reserve enough width for the DATE, SHOP, SKU and No. diagnostic labels so
+  values from each Batch EPS filename remain visible when the status updates.
+  - **ไทย:** ขยายช่องข้อมูลชื่อไฟล์ใน Status ให้แสดงค่าระหว่าง Batch ได้ครบ
+  - **Validation (2026-11-10):** Not tested. Static source and diff review only;
+    Illustrator ScriptUI rendering remains unverified.
+
+- Repair malformed ScriptUI statements in the local working copy and restore
+  the documented Batch controls: Select all by default, Select some for the
+  Optional range, and the directly copyable EPS list.
+  - **ไทย:** ซ่อมโค้ดหน้าต่าง Batch ที่มีข้อความแทรกกลางคำสั่ง และให้ตัวเลือกกับรายชื่อไฟล์ตรงตามคู่มือ
+  - **Validation (2026-11-10):** Not tested. Static source and diff review only;
+    Illustrator ScriptUI interaction remains unverified.
+
+- Derive the four-character SKU directly from the validated job identifier
+  instead of a regex capture. A real Illustrator log for
+  `1106(M)-SP-N012-03-01.eps` showed `SKU: undefined | 03 | 01` even though JPG
+  filenames used `N012-03-01` correctly.
+  - **ไทย:** แก้ SKU ใน `JOB INFO` ไม่ให้เป็น `undefined` โดยอ่าน `N012` จากรหัสที่ตรวจผ่านแล้ว
+  - **Validation (2026-11-09):** Not tested. Static source and diff review only;
+    the user-provided log shows the original failure, and Illustrator rerun is pending.
+
+
+- Accept a format code without a sequence in document names, such as `N003-A`
+  or `N003-R1`, alongside the three existing SKU forms. Interpret a lone two-digit
+  suffix as the sequence. Keep numeric format codes when a sequence follows for
+  existing jobs such as `N012-11-01`.
+  - **ไทย:** รองรับชื่อ SKU-รหัสรูปแบบโดยไม่มีลำดับ และแยก `N003-01` เป็นลำดับตามเดิม
+  - **Validation (2026-11-07):** Not tested. Static source and diff review only;
+    mock tests are absent and Illustrator export remains unverified.
+
+- Accept trailing document identifiers in all three forms: `SKU`, `SKU-SS`, and
+  `SKU-F-SS`. Require the SKU to be one English letter followed by three digits;
+  keep optional format and sequence parts in JPG names and log them only when present.
+  - **ไทย:** ชื่อ EPS ใช้ SKU อย่างเดียว, SKU-ลำดับ หรือ SKU-รหัสรูปแบบ-ลำดับได้ โดย SKU ต้องเป็นอักษรอังกฤษตามด้วยเลข 3 หลัก
+  - **Validation (2026-11-06):** Not tested. Static source and diff review only;
+    mock tests are absent and Illustrator export remains unverified.
+
+- Prefer the single populated OID TextFrame within a frame when empty OID
+  TextFrames are also present. Keep `EmptyOID` for a lone empty TextFrame and
+  skip frames with multiple populated OIDs, multiple empty OIDs without a
+  populated OID, or overlapping selected OIDs.
+  - **ไทย:** กรอบที่มี OID จริงหนึ่งอันและ TextFrame ว่างจะเลือก OID จริงแทนการข้าม
+  - **Validation (2026-11-06):** Not tested. Static source and diff review only;
+    Illustrator export remains unverified and mock test files are absent.
+
+- Recognize `NAME` as well as `Name` when selecting the work-marker layer,
+  including nested layers. Use the first matching layer in document order.
+  - **ไทย:** ตรวจ marker ใน Layer `NAME` ได้ด้วย และใช้ Layer แรกที่พบเมื่อมีทั้งสองชื่อ
+  - **Validation (2026-11-06):** Not tested. Static source and diff review only;
+    Illustrator export has not been run and mock test files are absent.
+
+- Count only closed four-point Rectangles taller than the configurable
+  `minFrameHeightCm` (default 0.5 cm) as export frames. Convert the threshold to
+  Illustrator points before comparing height. Exclude shorter or equal-height
+  paths before sorting and numbering, so they do not consume frame positions.
+  - **ไทย:** ใช้เกณฑ์ความสูงกรอบ 0.5 cm; กรอบที่สูงไม่เกินเกณฑ์ไม่กินเลขลำดับ
+  - **Validation (2026-11-06):** Not tested. Static source and diff review only;
+    the test files are absent and Illustrator export with the new threshold has not been run.
 
 - Preserve the complete output number when it exceeds the configured digit width,
   instead of truncating it and potentially reusing an earlier filename.
