@@ -23,6 +23,14 @@ Contributors and commit/PR references must be filled in when the work is committ
 
 ### Added / เพิ่ม
 
+- Route each EPS job's JPGs to a `YYYY-MM-DD/OID` folder under the selected output
+  folder, using its `MMDD` filename prefix and the current local year. Reject
+  missing or impossible dates for that job while later Batch jobs continue; keep
+  the round log in the output root.
+  - **ไทย:** แยกภาพตามวันที่ของ EPS แต่ละไฟล์ก่อนแยก OID และบันทึกข้อผิดพลาดเมื่อ DATE ใช้ไม่ได้
+  - **Validation (2026-11-11):** Not tested. Static source and diff review only;
+    Illustrator export and folder creation remain unverified.
+
 - Add `HANDOFF.md` as a state map and issue knowledge base with evidence,
   resolution history, pending Illustrator checks and a reusable handoff template.
   - **ไทย:** เพิ่มคลังสมองสำหรับส่งต่อ state ปัญหา วิธีแก้ หลักฐาน และงานที่ยังต้องตรวจ

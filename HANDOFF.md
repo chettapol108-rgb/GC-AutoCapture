@@ -43,6 +43,19 @@ Batch พยายามทำ Job ถัดไปหลังข้อผิด
 | KB-004 / S4 | Rectangle เตี้ยไม่ควรกินลำดับกรอบ | กรอง PathItem เส้นปิด 4 จุดที่สูงกว่า `minFrameHeightCm` ก่อนเรียงและกำหนดเลข | `CHANGELOG.md` Fixed 2026-11-06: Not tested; ยังรอตรวจ Illustrator |
 | KB-005 / S5–S6 | Artboard ที่ active อาจไม่ตรงกับกรอบส่งออก และการคืนค่าบางส่วนอาจล้มเหลว | เลือก Artboard ที่ปรับขอบก่อน export; คืน bounds, visibility และ active index แยกกัน พร้อมรวม error | `CHANGELOG.md` Fixed: ไม่มีผลตรวจใหม่เฉพาะรายการนี้ใน working copy; ต้องยืนยันใน Illustrator |
 
+### KB-006 — แยกภาพตาม DATE ของแต่ละ EPS
+
+- วันที่ / สถานะ: 2026-11-11; แก้แล้วรอตรวจ
+- State / หมวด: S4–S5; JPG และปลายทาง
+- อาการและวิธีทำซ้ำ: Batch ที่มี `1112(M)` และ `1113(N)` เคยส่ง JPG ลงโฟลเดอร์ OID ใต้ output เดียวกัน ไม่มีโฟลเดอร์วันที่ของแต่ละไฟล์
+- หลักฐานก่อนแก้: `exportFrames()` เดิมเรียก `ensureOrderFolder(folder, orderId)` โดย `folder` เป็น destination กลาง; `getDocumentInfo()` อ่าน DATE จากชื่อ EPS อยู่แล้ว
+- สาเหตุที่ยืนยัน: ขั้นตอนสร้าง path JPG ไม่ได้นำ DATE มาใช้
+- วิธีแก้: `executeJob()` ตรวจ DATE แบบ MMDD กับปีปัจจุบันของเครื่อง แล้ว `ensureDateFolder()` สร้าง `YYYY-MM-DD` ก่อนส่งต่อให้ `exportFrames()` แยก OID; DATE ขาดหรือผิดพลาดทำให้ Job นั้นล้มเหลวและบันทึก error
+- ผลหลังแก้: ตรวจ source และ diff แล้ว; ยังไม่มีผลส่งออกจริง
+- Validation: Not tested; ไม่ได้รันชุดทดสอบหรือ Illustrator ตามข้อกำหนด repository
+- งานค้าง / วิธีตรวจต่อ: ส่งออก Batch สองวันที่และวันผิดรูปแบบในโฟลเดอร์ทดสอบแยก ตรวจ path JPG, log, การทำ Job ถัดไป และการคืนสถานะเอกสาร
+- อ้างอิง: `CHANGELOG.md` Unreleased / Added
+
 ## งานค้างและจุดตรวจรอบถัดไป
 
 - ScriptUI Batch, รายการ EPS ที่คัดลอกได้, ช่วง START/END, จำนวนที่เลือก และข้อความ Current Step ยังไม่มีผลทดสอบ Illustrator สำหรับการแก้ไขล่าสุดใน working copy
