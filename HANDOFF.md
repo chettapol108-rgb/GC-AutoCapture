@@ -11,13 +11,13 @@
 | S0 รอเลือกงาน | `showCaptureDialog()` แสดง Single/Batch; `Current Step: WAITING ...` แล้ว `รอเริ่มงาน` | โหมด, EPS ที่เปิดอยู่, source/destination ที่เลือก; การปิดหน้าต่างก่อน START ไม่มี log |
 | S1 ค้นหาและเลือก EPS | Batch ใช้ `collectEpsFiles()` และ `getBatchFileSelection()`; UI แสดงจำนวนและ `[x]`/`[ ]` | path ต้นทาง, จำนวนที่พบ/เลือก, Select all หรือ Select range, START/END EPS, ข้อความ error หากชื่อซ้ำ/ไม่พบ/ลำดับกลับด้าน |
 | S2 ตรวจปลายทาง | START ตรวจ source และ destination แล้ว `ensureOutputFolder()` | path ที่เลือกและ path `.AutoCapture` จริง; หากไม่ผ่าน UI แสดงข้อผิดพลาดและยังไม่สร้าง log |
-| S3 เริ่มรอบและเปิด Job | `runSelection()` สร้าง log; `START`, `DISCOVERED`, `JOB START`; UI `Opening EPS...` | path log, โหมด, ลำดับ Job ในชุดที่เลือก, source EPS, เปิดอยู่เดิมหรือเปิดโดยสคริปต์ |
+| S3 เริ่มรอบและเปิด Job | `runSelection()` สร้าง log ใน `logs/sessions`; `RUN START`, `DISCOVERED`, `JOB START`, `BEFORE`/`AFTER` ของ `OPEN_EPS`; UI `Opening EPS...` | path log, โหมด, ลำดับ Job ในชุดที่เลือก, source EPS, เปิดอยู่เดิมหรือเปิดโดยสคริปต์ |
 | S4 ตรวจข้อมูล Job | `getDocumentInfo()`, `executeJob()`, `findFrameContainer()`, `collectFrames()`, `prepareExports()`; UI `Filename Generating...`; log `JOB INFO`, `SKIPPED` | SKU/format/sequence, container กรอบ, จำนวน Frames/Planned/Skipped, เหตุผลและพิกัดของแต่ละกรอบที่ข้าม |
 | S5 ส่งออกภาพ | `exportFrames()`; UI `Exporting .jpg n/total`; log `EXPORTED` หลัง `exportFile` สำเร็จ | Frame, Work, OID, bounds, path JPG, เวลาสำเร็จ, จำนวนที่ส่งออกแล้ว; JPG อยู่ในโฟลเดอร์ OID |
 | S6 คืนสถานะและจบ Job | `finally` เรียก `restoreDocumentState()`; `JOB END` เป็น `SUCCESS`, `ALL_SKIPPED` หรือ `FAILED`; UI `Export Success !` เมื่อ `executeJob()` คืนผล | Artboard bounds/active index และ visibility ที่คืนได้หรือคืนไม่ได้, จำนวน Exported/Skipped/Not exported, การปิด EPS ที่สคริปต์เปิด |
-| S7 จบรอบหรือผิดพลาด | log `END` หรือ `ALERT ERROR`; UI `JOB DONE` หรือ `เกิดข้อผิดพลาด` | จำนวน Job ที่สำเร็จ/ผิดพลาด, path log, first error, ไฟล์ที่ส่งออกสำเร็จก่อนหน้า, เอกสารที่ active หลัง Batch |
+| S7 จบรอบหรือผิดพลาด | log `RUN END` หรือ `ALERT ERROR`; UI `JOB DONE` หรือ `เกิดข้อผิดพลาด` | จำนวน Job ที่สำเร็จ/ผิดพลาด, path log, first error, ไฟล์ที่ส่งออกสำเร็จก่อนหน้า, เอกสารที่ active หลัง Batch |
 
-Batch พยายามทำ Job ถัดไปหลังข้อผิดพลาดราย Job แต่หยุดเมื่อเขียน log ล้มเหลว ส่วนการยกเลิกก่อน START ไม่สร้าง log และไม่เริ่ม export การแสดง `JOB DONE` ใน UI คือจบรอบการประมวลผล จึงต้องอ่าน `JOB END`/`END` และจำนวน error ใน log เพื่อสรุปผลจริง
+Batch พยายามทำ Job ถัดไปหลังข้อผิดพลาดราย Job แต่หยุดเมื่อเขียน log ล้มเหลว ส่วนการยกเลิกก่อน START ไม่สร้าง log และไม่เริ่ม export การแสดง `JOB DONE` ใน UI คือจบรอบการประมวลผล จึงต้องอ่าน `JOB END`/`RUN END` และจำนวน error ใน log เพื่อสรุปผลจริง
 
 ## หมวดปัญหาและจุดตรวจ
 
@@ -56,10 +56,122 @@ Batch พยายามทำ Job ถัดไปหลังข้อผิด
 - งานค้าง / วิธีตรวจต่อ: ส่งออก Batch สองวันที่และวันผิดรูปแบบในโฟลเดอร์ทดสอบแยก ตรวจ path JPG, log, การทำ Job ถัดไป และการคืนสถานะเอกสาร
 - อ้างอิง: `CHANGELOG.md` Unreleased / Added
 
+### KB-007 — เขียนทับ JPG เมื่อส่งออกชื่อซ้ำ
+
+- วันที่ / สถานะ: 2026-11-12; แก้แล้วรอตรวจ
+- State / หมวด: S5; JPG และปลายทาง
+- อาการและวิธีทำซ้ำ: ส่งออก EPS เดิมไปปลายทางเดิมซ้ำ ได้ JPG ชื่อใหม่ต่อท้าย `_02`, `_03` แทนการแทนที่ไฟล์ชื่อเดิม
+- หลักฐานก่อนแก้: `createOutputFile()` วนตรวจ `file.exists` แล้วเติมเลขท้าย; README ระบุการเติม `_02`, `_03` สำหรับ JPG
+- สาเหตุที่ยืนยัน: ขั้นตอนสร้าง path JPG เลี่ยงชื่อที่มีอยู่ก่อนเรียก `doc.exportFile()`
+- วิธีแก้: ให้ `createOutputFile()` คืน path ชื่อมาตรฐานเดิมเสมอ เพื่อให้ Illustrator ส่งออกทับ JPG ชื่อซ้ำ; การเปลี่ยน log ภายหลังบันทึกใน KB-008
+- ผลหลังแก้: ตรวจ source และ diff แล้ว; ยังไม่มีผลส่งออกจริง
+- Validation: Not tested; ไม่ได้รันชุดทดสอบหรือ Illustrator ตามข้อกำหนด repository
+- งานค้าง / วิธีตรวจต่อ: ใช้ EPS ตัวอย่างและโฟลเดอร์ทดสอบแยก ส่งออกซ้ำ ตรวจ JPG path เดิมถูกเขียนทับ ไม่มี JPG `_02` ใหม่ และตรวจ log ตาม KB-008
+- อ้างอิง: `CHANGELOG.md` Unreleased / Changed
+
+### KB-008 — ย้าย session log และยกเลิกเลขท้าย
+
+- วันที่ / สถานะ: 2026-11-12; แก้แล้วรอตรวจ
+- State / หมวด: S3–S7; Log และการกู้ผล
+- อาการและวิธีทำซ้ำ: log อยู่ที่โฟลเดอร์ผลลัพธ์โดยตรง เป็น `.txt` และชื่อซ้ำในวินาทีเดียวกันถูกเติม `_02`
+- หลักฐานก่อนแก้: `createUniqueLogFile()` สร้าง path `.txt` และวนตรวจ `file.exists`; `createLog()` ส่ง output root ให้ helper นี้
+- สาเหตุที่ยืนยัน: path และนามสกุล log ถูกกำหนดใน helper เดิม และมีลูปหลบชื่อซ้ำ
+- วิธีแก้: `createLog()` สร้าง `logs/sessions` ใต้โฟลเดอร์ผลลัพธ์ เปิดไฟล์ `.log` แบบ `w` เมื่อเริ่มรอบ แล้วเขียนรายการถัดไปแบบ append; ชื่อชนในวินาทีเดียวกันเขียนทับ log เดิม
+- ผลหลังแก้: ตรวจ source และ diff แล้ว; ยังไม่มีผลสร้างโฟลเดอร์หรือ log จริงใน Illustrator
+- Validation: Not tested; ไม่ได้รันชุดทดสอบหรือ Illustrator ตามข้อกำหนด repository
+- งานค้าง / วิธีตรวจต่อ: ตรวจ path, UTF-8, การเขียนทับ log ในวินาทีเดียวกัน และการหยุดเมื่อสร้างโฟลเดอร์หรือ log ไม่สำเร็จด้วยปลายทางทดสอบแยก
+- อ้างอิง: `CHANGELOG.md` Unreleased / Changed
+
+### KB-009 — อัปเดตสคริปต์จาก NAS ไปยัง Illustrator หลายปี
+
+- วันที่ / สถานะ: 2026-11-14; เพิ่มตัวอัปเดตแล้วรอตรวจบนเครื่องจริง
+
+- State / หมวด: ก่อน S0; การติดตั้งและอัปเดตสคริปต์
+
+- อาการและวิธีทำซ้ำ: แต่ละเครื่องมีโฟลเดอร์ `Adobe Illustrator 20xx` ต่างปีกัน จึงต้องคัดลอก `GC-AutoCaputre.js` จาก NAS ไปยัง `Presets\en_US\Scripts` ด้วยมือ
+
+- หลักฐานก่อนแก้: ผู้ใช้ระบุ source `G:\004 Program\illustrator-Stuff\Auto Capture\GC-AutoCaputre.js` และปลายทางที่ปีเปลี่ยนตามเครื่อง; repository เดิมไม่มี updater
+
+- วิธีแก้: เพิ่ม `updater/Update-Illustrator-Script.bat` ให้ตรวจ source, ค้นหา Illustrator 20xx ทุกโฟลเดอร์ใต้ `%ProgramFiles%\Adobe`, คัดลอกไฟล์ไปยังแต่ละ `en_US\Scripts` และสรุปผลสำเร็จ/ล้มเหลว ไม่สร้าง preset ภาษาอื่นโดยเดา
+
+- ผลหลังแก้: ตรวจเนื้อหา `.bat` และ diff แล้ว; ยังไม่มีผลคัดลอกจาก NAS หรือเปิด Illustrator จริง
+
+- Validation: Not tested; ไม่ได้เรียกไฟล์ `.bat` หรือชุดทดสอบตามข้อกำหนด repository
+
+- งานค้าง / วิธีตรวจต่อ: รันบนเครื่องที่เชื่อม `G:` ใน Command Prompt แบบ Administrator หลังปิด Illustrator ตรวจทุกปลายทางที่ติดตั้ง และเปิด Illustrator ใหม่เพื่อดูเมนู File > Scripts; หาก elevated session ไม่เห็น `G:` ให้ใช้ UNC path ที่เข้าถึงได้
+
+- อ้างอิง: `CHANGELOG.md` Unreleased / Added
+
+### KB-010 — ระบุสาเหตุเมื่อตัวอัปเดตล้มเหลว
+
+- วันที่ / สถานะ: 2026-11-14; ปรับข้อความวินิจฉัยแล้วรอตรวจบนเครื่องจริง
+- State / หมวด: ก่อน S0; การติดตั้งและอัปเดตสคริปต์
+- อาการและหลักฐานก่อนแก้: ผู้ใช้ต้องการทราบเหตุผลที่ fail; ตัวอัปเดตเดิมซ่อนผล `mkdir` และ `copy` ด้วยการส่ง output ไป `nul` และรายงานเพียงว่าไม่พบ source หรือคัดลอกไม่สำเร็จ
+- วิธีแก้: แยกข้อความเมื่อ `G:` ใช้ไม่ได้, โฟลเดอร์/ไฟล์ต้นทางหาย, Adobe หรือ `en_US` ไม่พบ และแสดงข้อความของ Windows จาก `mkdir`/`copy` โดยตรงก่อนบรรทัด `[ERROR]`
+- ผลหลังแก้ / Validation: Not tested; ตรวจเนื้อหาและ diff เท่านั้น ยังไม่ได้เรียก `.bat`
+- งานค้าง / วิธีตรวจต่อ: ลองแต่ละกรณีบนเครื่องทดสอบ รวมกรณีเปิดด้วย Administrator แล้วไม่เห็น `G:`, สิทธิ์เขียนไม่พอ และ NAS หลุดระหว่างคัดลอก
+- อ้างอิง: `CHANGELOG.md` Unreleased / Changed
+
+### KB-011 — ไล่ขั้นตอนส่งออกจาก session log
+
+- วันที่ / สถานะ: 2026-11-14; เพิ่มจุดบันทึกแล้วรอตรวจใน Illustrator
+- State / หมวด: S3–S7; Log และการกู้ผล, Name/OID, JPG และสถานะ Illustrator
+- หลักฐานก่อนแก้: log ตัวอย่าง `MASTER_20261114_085853.log` แสดง `BEFORE | READ_XML_FILE` ตามด้วย `RUN ERROR` จึงเห็นจุดล้มเหลว; log ของสคริปต์นี้เดิมบันทึก `JOB INFO`, `EXPORTED`, `SKIPPED` และ `ERROR` แต่ไม่มี `BEFORE`/`AFTER` รอบขั้นตอนสำคัญ และชื่อ log ในวินาทีเดียวกันถูกเขียนทับ
+- วิธีแก้: ใน `GC-AutoCapture.js` เพิ่มเวลาแบบมิลลิวินาที, `BEFORE`/`AFTER` พร้อมระยะเวลาและ Job/Step, `MATCH` รายกรอบ, การบันทึกผลคืนสถานะ และเลขท้ายชื่อ log เมื่อซ้ำ; เก็บเหตุการณ์หนึ่งบรรทัดเพื่อค้นย้อนหลัง
+- ผลหลังแก้ / Validation: Not tested; ตรวจเนื้อหาและ diff เท่านั้น ยังไม่มี log จาก Illustrator หลังแก้
+- งานค้าง / วิธีตรวจต่อ: ทดสอบด้วยสำเนา EPS และปลายทางแยกเมื่อผู้ใช้สั่ง ตรวจ Job สำเร็จ, กรอบที่ข้าม, เปิด EPS/ส่งออก/คืนสถานะผิดพลาด, log เขียนไม่ได้ และการเริ่มสองรอบในวินาทีเดียวกัน
+- อ้างอิง: `CHANGELOG.md` Unreleased / Added
+
+### KB-012 — แยก Job ใน session log
+
+- วันที่ / สถานะ: 2026-11-14; ปรับรูปแบบ log แล้วรอตรวจใน Illustrator
+- State / หมวด: S3–S7; Log และการกู้ผล
+- หลักฐานก่อนแก้: หลังเปลี่ยนเหตุการณ์ log เป็นหนึ่งบรรทัด `JOB END` กับ `JOB START` ถัดไปอยู่ติดกัน ทำให้แยกขอบเขต Job ด้วยสายตายาก
+- วิธีแก้: `appendLog()` รับจำนวนบรรทัดว่าง และ `runSelectionWithLog()` เว้นสองบรรทัดก่อน `JOB START` ตั้งแต่ Job ที่สอง โดยยังเขียนและปิด log ในรอบเดียว
+- ผลหลังแก้ / Validation: Not tested; ตรวจเนื้อหาและ diff เท่านั้น ยังไม่มี log ที่รันจาก Illustrator หลังแก้
+- งานค้าง / วิธีตรวจต่อ: เมื่อผู้ใช้สั่งทดสอบ ให้รัน Batch หลาย Job แล้วตรวจช่องว่างก่อน Job ที่สองและถัดไป รวมกรณี Job แรกผิดพลาด
+- อ้างอิง: `CHANGELOG.md` Unreleased / Changed
+
+### KB-013 — ไม่มี pattern DATE ในชื่อ EPS
+
+- วันที่ / สถานะ: 2026-11-16; แก้แล้วรอตรวจใน Illustrator
+- State / หมวด: S4–S5; ชื่อไฟล์และ SKU, JPG และปลายทาง, Log และการกู้ผล
+- อาการและวิธีทำซ้ำ: เปิด EPS ที่มี SKU แต่ไม่มี DATE ต้นชื่อ เช่น `N012-03-01.eps`; Job เดิมหยุดก่อนส่งออก
+- หลักฐานก่อนแก้: `getDocumentInfo()` คืน DATE ว่าง และ `getJobDateFolderName()` โยนข้อผิดพลาดก่อน `JOB INFO`
+- วิธีแก้: เก็บสถานะว่าพบ pattern DATE หรือไม่; เมื่อไม่พบให้แสดง DATE `0000`, ส่ง JPG ไปยัง `0000/OID` และบันทึก `WARNING` ว่าไม่พบ pattern วันที่ ส่วน DATE ที่ตรง pattern แต่เป็นวันที่ไม่จริงยังคงเป็นข้อผิดพลาด
+- ผลหลังแก้ / Validation: Not tested; ตรวจ source และ diff เท่านั้น ไม่มีชุดทดสอบใน working tree และยังไม่ได้ส่งออกใน Illustrator
+- งานค้าง / วิธีตรวจต่อ: ใช้สำเนา EPS ที่ไม่มี DATE และมี DATE ไม่จริงกับโฟลเดอร์ทดสอบแยก ตรวจค่าใน UI, path JPG, ข้อความ `WARNING`/`ERROR` ใน log และผล Batch ถัดไป
+- อ้างอิง: `CHANGELOG.md` Unreleased / Fixed
+
+### KB-014 — เติมเดือนและวันปัจจุบันในโฟลเดอร์สำรอง
+
+- วันที่ / สถานะ: 2026-11-16; แก้แล้วรอตรวจใน Illustrator
+- State / หมวด: S4–S5; JPG และปลายทาง, Log และการกู้ผล
+- หลักฐานก่อนแก้: KB-013 ใช้ `getJobDateFolderName()` คืน `0000` เมื่อไม่พบ pattern DATE จึงไม่มีเดือนและวันในชื่อโฟลเดอร์
+- วิธีแก้: คืน `0000-MM-DD` โดยอ่านเดือนและวันจากเวลาเครื่องขณะเริ่ม Job; ใช้วันเดียวกันใน path JPG และข้อความ `WARNING` ของ log ค่า DATE ใน UI ยังคงเป็น `0000`
+- ผลหลังแก้ / Validation: Not tested; ตรวจ source และ diff เท่านั้น ยังไม่ได้ส่งออกใน Illustrator
+- งานค้าง / วิธีตรวจต่อ: ส่งออก EPS ที่ไม่มี DATE ในโฟลเดอร์ทดสอบ ตรวจชื่อโฟลเดอร์และ `WARNING` เทียบกับวันปัจจุบันของเครื่อง รวมกรณีข้ามเที่ยงคืนระหว่าง Job
+- อ้างอิง: KB-013 และ `CHANGELOG.md` Unreleased / Fixed
+
+### KB-015 — อ่าน OID จาก Group ใน Name เมื่อไม่มี OID container
+
+- วันที่ / สถานะ: 2026-11-16; แก้แล้วรอตรวจใน Illustrator
+- State / หมวด: S4; Name/OID และการจับคู่กรอบ
+- หลักฐานก่อนแก้: `prepareExports()` ข้ามทุกกรอบทันทีเมื่อไม่พบ Layer `OID` และไม่ค้น Group `OID` หรือ Type ภายใน Group `N[ตัวเลข]` ของ Layer `Name`
+- วิธีแก้: รองรับ Group `OID` เป็นแหล่งหลัก และเมื่อไม่มีทั้ง Layer/Group `OID` ให้หา Type ใน Group `N[ตัวเลข]` ที่อยู่ในกรอบเดียวกัน เลือก `N[เลข]-OID`/`N[เลข]_OID` ก่อน Type รหัสผสม 14–18 ตัว; กรณีขาด ผิดรูป หรือกำกวมบันทึกเหตุผลที่ข้าม
+- ผลหลังแก้ / Validation: Not tested; ตรวจ source และ diff เท่านั้น ยังไม่ได้รันใน Illustrator
+- งานค้าง / วิธีตรวจต่อ: ใช้ EPS สำเนาและโฟลเดอร์แยกตรวจทั้งสองรูปแบบ, กรอบซ้อน, หลาย candidate, ค่า OID ว่าง และ Group `OID` ที่มีอยู่จริง
+- อ้างอิง: `CHANGELOG.md` Unreleased / Added
+
 ## งานค้างและจุดตรวจรอบถัดไป
+
+
+- ตัวอัปเดต NAS ใน KB-009 ยังต้องตรวจบนเครื่องที่มี `G:` และ Illustrator จริง โดยปิด Illustrator ก่อน แล้วตรวจไฟล์ปลายทางและเมนูหลังเปิดใหม่
 
 - ScriptUI Batch, รายการ EPS ที่คัดลอกได้, ช่วง START/END, จำนวนที่เลือก และข้อความ Current Step ยังไม่มีผลทดสอบ Illustrator สำหรับการแก้ไขล่าสุดใน working copy
 - การแก้ `SKU: undefined`, OID placeholder, เกณฑ์กรอบ และภาพ JPG หลังการเปลี่ยนแปลงล่าสุดยังต้องตรวจด้วย EPS ตัวอย่างและโฟลเดอร์ทดสอบแยก เมื่อผู้ใช้สั่งให้ทดสอบ
+- การเขียนทับ JPG ชื่อซ้ำตาม KB-007 ยังต้องตรวจใน Illustrator ด้วยปลายทางทดสอบแยก เมื่อผู้ใช้สั่งให้ทดสอบ
+- session log ใน `logs/sessions` ตาม KB-008 ยังต้องตรวจใน Illustrator เมื่อผู้ใช้สั่งให้ทดสอบ
 - หากพบปัญหาใหม่ ให้บันทึกอาการกับหลักฐานก่อนแก้ และเพิ่มผลตรวจจริงหลังแก้ ห้ามเปลี่ยนสถานะจาก “รอตรวจ” เป็น “ผ่าน” โดยอาศัยผลทดสอบเก่า
 
 ## แบบฟอร์ม handoff ทุกครั้งที่แก้ปัญหา

@@ -23,6 +23,30 @@ Contributors and commit/PR references must be filled in when the work is committ
 
 ### Added / เพิ่ม
 
+- When no `OID` Layer or Group exists, find OID Type objects inside numbered
+  `N` Groups in `Name`. Prefer a matching `N3-OID`/`N3_OID` Type's contents;
+  otherwise accept a unique 14–18 character alphanumeric ID in the same frame.
+  Skip missing, invalid, or ambiguous matches with a log reason.
+  - **ไทย:** เมื่อไม่มี Layer/Group `OID` ให้อ่าน OID จาก Type ใน Group `N` ตามเลขใน `Name` และข้ามกรอบที่ข้อมูลกำกวม
+  - **Validation (2026-11-16):** Not tested. Static source and diff review only;
+    Illustrator matching and JPG export remain unverified.
+
+- Record millisecond, single-line `BEFORE`/`AFTER` events for each job's open,
+  validation, frame matching, JPG export and document restoration, with elapsed
+  time and per-frame `MATCH` decisions. Include job and step in error records and
+  preserve same-second session logs using numbered filenames.
+  - **ไทย:** เพิ่มจุดติดตามก่อน/หลังแต่ละขั้นและผลจับคู่รายกรอบ เพื่อไล่จุดที่หยุดจาก log ได้ พร้อมรักษา log รอบก่อนเมื่อชื่อซ้ำ
+  - **Validation (2026-11-14):** Not tested. Static source and diff review only;
+    Illustrator behavior and log output remain unverified.
+
+- Add `updater/Update-Illustrator-Script.bat` to copy `GC-AutoCaputre.js` from the
+  mapped NAS drive to every installed Illustrator 20xx `en_US/Scripts` folder.
+  Report missing source, missing preset folders and copy failures per version.
+  - **ไทย:** เพิ่มไฟล์อัปเดตสคริปต์จาก NAS ไปยัง Illustrator ทุกปีที่ติดตั้ง พร้อมแจ้งผลแต่ละเครื่อง
+  - **Validation (2026-11-14):** Not tested. Static batch source and diff review
+    only; NAS access, Administrator permissions and Illustrator menu refresh
+    remain unverified.
+
 - Route each EPS job's JPGs to a `YYYY-MM-DD/OID` folder under the selected output
   folder, using its `MMDD` filename prefix and the current local year. Reject
   missing or impossible dates for that job while later Batch jobs continue; keep
@@ -143,6 +167,34 @@ Contributors and commit/PR references must be filled in when the work is committ
 
 ### Changed / ปรับปรุง
 
+- Separate consecutive jobs in the session log with two blank lines before the
+  next `JOB START`, while keeping each event on a single timestamped line.
+  - **ไทย:** เว้นสองบรรทัดระหว่าง Job ใน log เพื่อให้ไล่อ่านแต่ละงานได้ง่ายขึ้น
+  - **Validation (2026-11-14):** Not tested. Static source and diff review only;
+    Illustrator log output remains unverified.
+
+- Show specific updater failures for an unavailable mapped drive, missing NAS
+  folder or file, and missing Adobe/preset folders. Keep Windows error messages
+  visible when folder creation or copying fails.
+  - **ไทย:** ตัวอัปเดตแจ้งจุดที่หาไม่พบ และแสดงสาเหตุจาก Windows เมื่อเขียนไฟล์ไม่ได้
+  - **Validation (2026-11-14):** Not tested. Static batch source and diff review
+    only; NAS and protected Program Files paths remain unverified.
+
+- Store each UTF-8 session log under `logs/sessions` in the output folder with
+  a `.log` extension. Use the timestamped filename directly; a second run in
+  the same second overwrites that log instead of adding a numbered suffix.
+  Stop with an error if the folders or log cannot be created or written.
+  - **ไทย:** ย้าย log ไป `logs/sessions` เป็นไฟล์ `.log` และยกเลิกเลขท้ายชื่อซ้ำ
+  - **Validation (2026-11-12):** Not tested. Static source and diff review only;
+    folder creation and same-second logging in Illustrator remain unverified.
+
+- Export a repeated JPG to the same filename and let Illustrator overwrite the
+  existing image. The then-existing numbered log suffix rule is superseded by
+  the session log change above.
+  - **ไทย:** ส่งออก JPG ชื่อซ้ำทับไฟล์เดิมทันที; กฎเลขท้าย log ถูกยกเลิกในรายการด้านบน
+  - **Validation (2026-11-12):** Not tested. Static source and diff review only;
+    repeated export in Illustrator remains unverified.
+
 - Show the current Batch Job as its position within the selected EPS range over
   the selected count, starting at 1 when START EPS selects a later file.
   Give the Current Step label enough width for updated status text.
@@ -252,6 +304,14 @@ Contributors and commit/PR references must be filled in when the work is committ
   - **ไทย:** จัดระเบียบโค้ดและเพิ่มคำอธิบาย เพื่อให้ทีมแก้ไขต่อได้ง่าย
 
 ### Fixed / แก้ไข
+
+- Continue exporting an EPS whose filename has no DATE pattern by displaying
+  `0000` and using `0000-MM-DD` as its folder, with the current machine month and
+  day. Record a warning with the folder name in the session log;
+  dates that match the pattern but are impossible still fail validation.
+  - **ไทย:** ชื่อ EPS ที่ไม่มีรูปแบบวันที่แสดง `0000` และใช้โฟลเดอร์ `0000-MM-DD` ตามวันปัจจุบัน พร้อมบันทึกคำเตือนใน log
+  - **Validation (2026-11-16):** Not tested. Static source and diff review only;
+    Illustrator export and log output remain unverified.
 
 - Reserve enough width for the DATE, SHOP, SKU and No. diagnostic labels so
   values from each Batch EPS filename remain visible when the status updates.
