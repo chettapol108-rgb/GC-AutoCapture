@@ -13,11 +13,11 @@
     // รวมค่าที่นักพัฒนาปรับได้ไว้ที่นี่ โดย Illustrator ใช้หน่วยพื้นฐาน 72 points ต่อหนึ่งนิ้ว
     var CONFIG = {
         // ชื่อ Layer หรือ Group กรอบ เทียบชื่อเต็มโดยไม่แยกตัวพิมพ์และตัดช่องว่างหัวท้าย
-        frameLayerNames: ["CutLine","Cut-Line","กรอบ", "Layout", "FrameLine"],
+        frameLayerNames: ["CutLine","กรอบ","Layout"],
         // ความสูงขั้นต่ำของกรอบเป็นเซนติเมตร (Illustrator API คืนค่า height เป็น points)
         minFrameHeightCm: 0.5,
         // DPI เป้าหมาย: ค่า 72 ให้สเกล 100% หากต้องการภาพละเอียดขึ้นให้ปรับค่านี้
-        targetDPI: 96,
+        targetDPI: 120,
         // คุณภาพ JPG ตั้งได้ในช่วง 0–100
         jpegQuality: 100,
         // จำนวนหลักขั้นต่ำของลำดับกรอบ เช่นกรอบที่ 12 จะได้ 012
@@ -237,6 +237,122 @@
         }
     }
 
+    function findNamedGroup(container, name) {
+        var items = container.pageItems || [];
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            if (item.parent && item.parent !== container) {
+                continue;
+            }
+            if (item.typename === "GroupItem") {
+                if (item.name === name) {
+                    return item;
+                }
+                var nested = findNamedGroup(item, name);
+                if (nested) {
+                    return nested;
+                }
+            }
+        }
+        var layers = container.layers || [];
+        for (var j = 0; j < layers.length; j++) {
+            var nestedLayer = findNamedGroup(layers[j], name);
+            if (nestedLayer) {
+                return nestedLayer;
+            }
+        }
+        return null;
+    }
+
+    function collectNameOrderIds(container, group, result) {
+        var items = container.pageItems || [];
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            if (item.parent && item.parent !== container) {
+                continue;
+            }
+            if (item.typename === "GroupItem") {
+                if (!/^N[0-9]+$/.test(String(item.name || ""))) {
+                    collectNameOrderIds(item, group, result);
+                }
+            } else if (item.typename === "TextFrame") {
+                var markerName = String(item.name || "").replace(/^\s+|\s+$/g, "");
+                var groupNumber = String(group.name).substring(1);
+                var value = String(item.contents || "").replace(/^\s+|\s+$/g, "");
+                if (markerName === "N" + groupNumber + "-OID" ||
+                        markerName === "N" + groupNumber + "_OID") {
+                    result.push({ item: item, group: group, value: value, explicit: true });
+                } else if (!/^N[0-9]+[-_]OID$/.test(markerName)) {
+                    if (!(/^[A-Z0-9]{14,18}$/i.test(value) && /[A-Z]/i.test(value) && /[0-9]/.test(value))) {
+                        value = markerName;
+                    }
+                    if (/^[A-Z0-9]{14,18}$/i.test(value) && /[A-Z]/i.test(value) && /[0-9]/.test(value)) {
+                        result.push({ item: item, group: group, value: value, explicit: false });
+                    }
+                }
+            }
+        }
+    }
+
+    function collectNameOrderIdGroups(container, result) {
+        var items = container.pageItems || [];
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            if (item.parent && item.parent !== container) {
+                continue;
+            }
+            if (item.typename === "GroupItem") {
+                if (/^N[0-9]+$/.test(String(item.name || ""))) {
+                    collectNameOrderIds(item, item, result);
+                }
+                collectNameOrderIdGroups(item, result);
+            }
+        }
+        var layers = container.layers || [];
+        for (var j = 0; j < layers.length; j++) {
+            collectNameOrderIdGroups(layers[j], result);
+        }
+    }
+
+    function findNameOrderId(frameIndex, frames, candidates) {
+        var bounds = frames[frameIndex].bounds;
+        var selected = null;
+        var explicitCount = 0;
+        var genericCount = 0;
+        var generic = null;
+        for (var i = 0; i < candidates.length; i++) {
+            var candidate = candidates[i];
+            if (!containsItemCenter(bounds, candidate.group) ||
+                    !containsItemCenter(bounds, candidate.item)) {
+                continue;
+            }
+            if (candidate.explicit) {
+                selected = candidate;
+                explicitCount++;
+            } else {
+                generic = candidate;
+                genericCount++;
+            }
+        }
+        if (explicitCount > 1 || (explicitCount === 0 && genericCount > 1)) {
+            return { reason: "Ambiguous OID in Name group" };
+        }
+        selected = explicitCount ? selected : generic;
+        if (!selected) {
+            return { reason: "No OID in Name group at export position" };
+        }
+        if (!/^[A-Z0-9]*[0-9][A-Z0-9]*$/i.test(selected.value)) {
+            return { reason: "Invalid OID in Name group" };
+        }
+        for (var j = 0; j < frames.length; j++) {
+            if (j !== frameIndex && (containsItemCenter(frames[j].bounds, selected.item) ||
+                    containsItemCenter(frames[j].bounds, selected.group))) {
+                return { reason: "Ambiguous OID / overlapping frames" };
+            }
+        }
+        return { value: selected.value };
+    }
+
     function getSku(documentName) {
         // A lone two-digit suffix is a sequence; a letter-led suffix is a format.
         // Numeric formats remain valid when followed by a sequence for old jobs.
@@ -256,10 +372,12 @@
         var skuInfo = parseSkuForLog(identifier);
         var prefix = identifier ? filename.substring(0, filename.length - identifier.length).replace(/-$/, "") : filename;
         var parts = prefix ? prefix.split("-") : [];
-        var date = parts.length > 0 && /^\d{4}(?:\([A-Z]\))?$/i.test(parts[0]) ? parts[0] : "";
-        var shop = date && parts.length > 1 && /^[A-Z0-9]+$/i.test(parts[1]) ? parts[1] : "";
+        var datePatternFound = parts.length > 0 && /^\d{4}(?:\([A-Z]\))?$/i.test(parts[0]);
+        var date = datePatternFound ? parts[0] : "0000";
+        var shop = datePatternFound && parts.length > 1 && /^[A-Z0-9]+$/i.test(parts[1]) ? parts[1] : "";
         return { filename: filename, date: date, shop: shop, sku: skuInfo.sku,
-            skuFormat: skuInfo.format, fileSequence: skuInfo.sequence, identifier: identifier };
+            datePatternFound: datePatternFound, skuFormat: skuInfo.format,
+            fileSequence: skuInfo.sequence, identifier: identifier };
     }
 
     function getOrderId(item) {
@@ -300,19 +418,33 @@
     function prepareExports(doc, frames, skippedFrames) {
         var nameLayer = findNamedLayer(doc.layers, "Name", "NAME");
         var oidLayer = findNamedLayer(doc.layers, "OID");
+        var oidGroup = null;
         var names = [];
         var oidItems = [];
+        var nameOrderIds = [];
         var exports = [];
         skippedFrames = skippedFrames || [];
-        if (!nameLayer || !oidLayer) {
+        if (!oidLayer) {
+            for (var groupIndex = 0; groupIndex < doc.layers.length; groupIndex++) {
+                oidGroup = findNamedGroup(doc.layers[groupIndex], "OID");
+                if (oidGroup) {
+                    break;
+                }
+            }
+        }
+        if (!nameLayer) {
             for (var missing = 0; missing < frames.length; missing++) {
                 skippedFrames.push({ bounds: frames[missing].bounds, frame: missing + 1,
-                    reason: "Missing layer: " + (!nameLayer ? "Name " : "") + (!oidLayer ? "OID" : "") });
+                    reason: "Missing layer: Name" });
             }
             return exports;
         }
         collectNameMarkers(nameLayer, names);
-        collectTextFrames(oidLayer, oidItems);
+        if (oidLayer || oidGroup) {
+            collectTextFrames(oidLayer || oidGroup, oidItems);
+        } else {
+            collectNameOrderIdGroups(nameLayer, nameOrderIds);
+        }
         for (var i = 0; i < frames.length; i++) {
             var number = i + 1;
             var hasName = false;
@@ -339,6 +471,18 @@
                     reason: ambiguousName ? "Name marker in overlapping frames" :
                         !hasName ? "No Name marker at export position" :
                         "Name barcode marker requires Libre Barcode 128 Text Regular" });
+                continue;
+            }
+
+            if (!oidLayer && !oidGroup) {
+                var fallback = findNameOrderId(i, frames, nameOrderIds);
+                if (fallback.reason) {
+                    skippedFrames.push({ bounds: frames[i].bounds, frame: i + 1, number: number,
+                        reason: fallback.reason });
+                } else {
+                    exports.push({ bounds: frames[i].bounds, frame: i + 1, number: number,
+                        orderId: fallback.value });
+                }
                 continue;
             }
 
@@ -399,7 +543,11 @@
         return text;
     }
 
-    function getJobDateFolderName(dateText, currentDate) {
+    function getJobDateFolderName(dateText, currentDate, datePatternFound) {
+        if (!datePatternFound) {
+            return "0000-" + padNumber(currentDate.getMonth() + 1, 2) +
+                "-" + padNumber(currentDate.getDate(), 2);
+        }
         if (!/^\d{4}(?:\([A-Z]\))?$/i.test(dateText || "")) {
             throw new Error("ไม่พบ DATE แบบ MMDD ในชื่อ EPS: " + (dateText || "-"));
         }
@@ -605,6 +753,12 @@
     }
 
     function executeJob(doc, folder, log, job, info, updateStatus) {
+        var currentDate = new Date();
+        if (!info.datePatternFound) {
+            appendLog(log, "WARNING | Source=" + info.filename +
+                " | ไม่พบ pattern DATE แบบ MMDD ในชื่อ EPS; ใช้ DATE=0000 และ Folder=" +
+                getJobDateFolderName(info.date, currentDate, false));
+        }
         var frameContainer = findFrameContainer(doc);
         if (!frameContainer) {
             throw new Error("ไม่พบ Layer หรือ Group ที่ชื่อ " + CONFIG.frameLayerNames.join(" หรือ ") + " ในไฟล์นี้");
@@ -620,7 +774,7 @@
         if (!sku) {
             throw new Error("\nไม่พบรหัส SKU ในชื่อไฟล์\nต้องมี SKU เป็นตัวอักษรอังกฤษ 1 ตัวตามด้วยเลข 3 หลัก\nตัวอย่าง N012.eps, N012-A.eps, N012-01.eps หรือ L007-N02-01.eps");
         }
-        var dateFolderName = getJobDateFolderName(info.date, new Date());
+        var dateFolderName = getJobDateFolderName(info.date, currentDate, info.datePatternFound);
         var totalFrames = frames.length;
         var skippedFrames = [];
         frames = prepareExports(doc, frames, skippedFrames);
