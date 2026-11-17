@@ -23,6 +23,14 @@ Contributors and commit/PR references must be filled in when the work is committ
 
 ### Added / เพิ่ม
 
+- Export adjacent, consecutively numbered frames with the same valid OID as a
+  left-to-right PNG24 image at the configured DPI. Keep one `Mixed.png` per OID,
+  or number separate runs `Mixed-01.png`, `Mixed-02.png`; move their JPGs to the
+  OID's `Individual Image` folder only after the PNG succeeds.
+  - **ไทย:** รวมกรอบเลขต่อเนื่องที่มี OID เดียวกันเป็น PNG และย้าย JPG แยกเข้า Individual Image หลังรวมสำเร็จ
+  - **Validation (2026-11-17):** Not tested. Static source and diff review only;
+    PNG dimensions, image seams and Illustrator document cleanup remain unverified.
+
 - When no `OID` Layer or Group exists, find OID Type objects inside numbered
   `N` Groups in `Name`. Prefer a matching `N3-OID`/`N3_OID` Type's contents;
   otherwise accept a unique 14–18 character alphanumeric ID in the same frame.
@@ -166,6 +174,19 @@ Contributors and commit/PR references must be filled in when the work is committ
   - **ไทย:** เพิ่มประวัติการเปลี่ยนแปลงสองภาษาและแบบฟอร์มสำหรับทีม
 
 ### Changed / ปรับปรุง
+
+- Move the ScriptUI window title and version into `CONFIG.uiTitle` and
+  `CONFIG.uiVersion`; the dialog displays them as `<title> v<version>`.
+  - **ไทย:** ปรับชื่อและเวอร์ชันบนหน้าต่างได้จาก CONFIG ต้นไฟล์
+  - **Validation (2026-11-17):** Not tested. Static source and diff review only;
+    Illustrator ScriptUI display remains unverified.
+
+- Export JPGs directly to the `OID` folder under the configured output folder,
+  without creating a date-pattern folder. Keep DATE display, validation and the
+  missing-DATE warning; keep session logs in `logs/sessions`.
+  - **ไทย:** ยกเลิกโฟลเดอร์วันที่ของ JPG และส่งออกลงโฟลเดอร์ OID ใต้ปลายทางโดยตรง
+  - **Validation (2026-11-17):** Not tested. Static source and diff review only;
+    Illustrator export and folder creation remain unverified.
 
 - Separate consecutive jobs in the session log with two blank lines before the
   next `JOB START`, while keeping each event on a single timestamped line.

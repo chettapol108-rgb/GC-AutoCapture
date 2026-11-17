@@ -13,7 +13,7 @@
 | S2 ตรวจปลายทาง | START ตรวจ source และ destination แล้ว `ensureOutputFolder()` | path ที่เลือกและ path `.AutoCapture` จริง; หากไม่ผ่าน UI แสดงข้อผิดพลาดและยังไม่สร้าง log |
 | S3 เริ่มรอบและเปิด Job | `runSelection()` สร้าง log ใน `logs/sessions`; `RUN START`, `DISCOVERED`, `JOB START`, `BEFORE`/`AFTER` ของ `OPEN_EPS`; UI `Opening EPS...` | path log, โหมด, ลำดับ Job ในชุดที่เลือก, source EPS, เปิดอยู่เดิมหรือเปิดโดยสคริปต์ |
 | S4 ตรวจข้อมูล Job | `getDocumentInfo()`, `executeJob()`, `findFrameContainer()`, `collectFrames()`, `prepareExports()`; UI `Filename Generating...`; log `JOB INFO`, `SKIPPED` | SKU/format/sequence, container กรอบ, จำนวน Frames/Planned/Skipped, เหตุผลและพิกัดของแต่ละกรอบที่ข้าม |
-| S5 ส่งออกภาพ | `exportFrames()`; UI `Exporting .jpg n/total`; log `EXPORTED` หลัง `exportFile` สำเร็จ | Frame, Work, OID, bounds, path JPG, เวลาสำเร็จ, จำนวนที่ส่งออกแล้ว; JPG อยู่ในโฟลเดอร์ OID |
+| S5 ส่งออกภาพ | `exportFrames()` และ `exportMixedGroups()`; UI `Exporting .jpg n/total` หรือ `Exporting mixed .png n/total`; log `EXPORTED`, `MIXED`, `MOVED` หลังแต่ละขั้นสำเร็จ | Frame, Work, OID, bounds, path JPG/PNG, ช่วงกรอบ, path JPG หลังย้าย; ไฟล์อยู่ใต้โฟลเดอร์ OID |
 | S6 คืนสถานะและจบ Job | `finally` เรียก `restoreDocumentState()`; `JOB END` เป็น `SUCCESS`, `ALL_SKIPPED` หรือ `FAILED`; UI `Export Success !` เมื่อ `executeJob()` คืนผล | Artboard bounds/active index และ visibility ที่คืนได้หรือคืนไม่ได้, จำนวน Exported/Skipped/Not exported, การปิด EPS ที่สคริปต์เปิด |
 | S7 จบรอบหรือผิดพลาด | log `RUN END` หรือ `ALERT ERROR`; UI `JOB DONE` หรือ `เกิดข้อผิดพลาด` | จำนวน Job ที่สำเร็จ/ผิดพลาด, path log, first error, ไฟล์ที่ส่งออกสำเร็จก่อนหน้า, เอกสารที่ active หลัง Batch |
 
@@ -163,8 +163,39 @@ Batch พยายามทำ Job ถัดไปหลังข้อผิด
 - งานค้าง / วิธีตรวจต่อ: ใช้ EPS สำเนาและโฟลเดอร์แยกตรวจทั้งสองรูปแบบ, กรอบซ้อน, หลาย candidate, ค่า OID ว่าง และ Group `OID` ที่มีอยู่จริง
 - อ้างอิง: `CHANGELOG.md` Unreleased / Added
 
-## งานค้างและจุดตรวจรอบถัดไป
+### KB-016 — ยกเลิกโฟลเดอร์วันที่ของ JPG
 
+- วันที่ / สถานะ: 2026-11-17; แก้แล้วรอตรวจใน Illustrator
+- State / หมวด: S4–S5; JPG และปลายทาง
+- อาการและวิธีทำซ้ำ: ส่งออก EPS แล้ว JPG อยู่ใต้ `YYYY-MM-DD/OID` หรือ `0000-MM-DD/OID` แทนที่จะอยู่ใต้ OID ของ output folder โดยตรง
+- หลักฐานก่อนแก้: `executeJob()` เรียก `getJobDateFolderName()` และ `ensureDateFolder()` แล้วส่ง date folder ให้ `exportFrames()` ซึ่งสร้าง OID folder ต่อจาก path นั้น
+- สาเหตุที่ยืนยันจากโค้ด: date folder ถูกแทรกเป็น parent ของ OID folder ก่อนส่งออกทุก Job ที่มีภาพ
+- วิธีแก้: `executeJob()` ส่ง output folder ให้ `exportFrames()` โดยตรงและยังเรียก `validateJobDate()` เพื่อรักษาการตรวจ DATE; คำเตือนเมื่อไม่พบ DATE ไม่ระบุโฟลเดอร์วันที่อีกต่อไป
+- ผลหลังแก้ / Validation: Not tested; ตรวจ source และ diff เท่านั้น ยังไม่ได้รันชุดทดสอบหรือส่งออกใน Illustrator
+- งานค้าง / วิธีตรวจต่อ: ใช้ EPS สำเนาที่มี DATE ต่างกัน ไม่มี DATE และมี DATE ไม่จริงกับปลายทางทดสอบแยก ตรวจ JPG ใต้ `<output>/<OID>/`, ไม่มีโฟลเดอร์วันที่ใหม่, ข้อความ log และการทำ Batch ต่อเมื่อ DATE ไม่จริง
+- อ้างอิง: `CHANGELOG.md` Unreleased / Changed; ย้อนการจัด path ใน KB-006, KB-013 และ KB-014 โดยคงการตรวจ DATE
+
+### KB-017 — รวมกรอบ OID เดียวกันเป็น PNG
+
+- วันที่ / สถานะ: 2026-11-17; แก้แล้วรอตรวจใน Illustrator
+- State / หมวด: S5–S6; JPG และปลายทาง, Log และการกู้ผล, สถานะ Illustrator
+- หลักฐานก่อนแก้: `exportFrames()` ส่งออก JPG ทีละกรอบใต้ `<output>/<OID>/` และไม่มีขั้นตอนรวมภาพหรือย้าย JPG; `prepareExports()` ให้เลขกรอบและ OID ที่ผ่านการจับคู่แล้ว
+- วิธีแก้: หลังส่งออกและคืนสถานะเอกสาร ให้หา run ที่เลขกรอบต่อเนื่องและ OID เดียวกันอย่างน้อยสองกรอบ สร้างเอกสาร Illustrator ชั่วคราวเพื่อวาง JPG ชิดกันตามลำดับ ส่งออก PNG24 ที่สเกล DPI เดิม ปิดเอกสารชั่วคราวและกลับไปเอกสารต้นทาง แล้วคัดลอกและลบ JPG ต้นทางเพื่อย้ายเข้า `Individual Image` หลัง PNG สำเร็จ ใช้ `Mixed-01`, `Mixed-02` เมื่อ OID เดียวกันมีหลาย run
+- ผลหลังแก้ / Validation: Not tested; ตรวจโค้ดและ diff เท่านั้น ไม่ได้รันชุดทดสอบหรือส่งออกจริง และ `tests/` ไม่อยู่ใน working tree
+- งานค้าง / วิธีตรวจต่อ: ใช้ EPS สำเนาและ output แยก ตรวจคู่ 005–006, กลุ่มสามกรอบ, OID เดิมสอง run, กรอบข้าม, `EmptyOID`, ความสูงต่างกัน, ขนาดพิกเซลและรอยต่อ PNG, การย้าย JPG, การรันซ้ำ, log และการกลับไปเอกสารเดิมหลัง PNG หรือการย้ายผิดพลาด
+- อ้างอิง: `CHANGELOG.md` Unreleased / Added
+
+### KB-018 — ตั้งชื่อและเวอร์ชันหน้าต่าง ScriptUI
+
+- วันที่ / สถานะ: 2026-11-17; แก้แล้วรอตรวจใน Illustrator
+- State / หมวด: S0; UI และการเลือกคิว
+- หลักฐานก่อนแก้: `showCaptureDialog()` กำหนด `AutoCapture v1.0.3` ตรงในคำสั่งสร้าง `Window` จึงต้องแก้ในส่วน UI ทุกครั้งที่เปลี่ยนชื่อหรือเวอร์ชัน
+- วิธีแก้: เพิ่ม `CONFIG.uiTitle` และ `CONFIG.uiVersion` ที่ต้น `GC-AutoCapture.js`; นำสองค่ามาประกอบเป็น `<title> v<version>` เมื่อสร้างหน้าต่าง
+- ผลหลังแก้ / Validation: Not tested; ตรวจ source และ diff เท่านั้น ยังไม่ได้เปิด ScriptUI ใน Illustrator
+- งานค้าง / วิธีตรวจต่อ: เปิดสคริปต์ใน Illustrator แล้วตรวจชื่อหน้าต่างด้วยค่าเริ่มต้นและหลังแก้สองค่าใน CONFIG
+- อ้างอิง: `CHANGELOG.md` Unreleased / Changed
+
+## งานค้างและจุดตรวจรอบถัดไป
 
 - ตัวอัปเดต NAS ใน KB-009 ยังต้องตรวจบนเครื่องที่มี `G:` และ Illustrator จริง โดยปิด Illustrator ก่อน แล้วตรวจไฟล์ปลายทางและเมนูหลังเปิดใหม่
 
