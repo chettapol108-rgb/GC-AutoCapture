@@ -14,7 +14,7 @@
     var CONFIG = {
         // ชื่อและเวอร์ชันที่แสดงบนแถบชื่อหน้าต่าง ScriptUI
         uiTitle: "AutoCapture",
-        uiVersion: "1.1.0",
+        uiVersion: "1.1.1",
         // ชื่อ Layer หรือ Group กรอบ เทียบชื่อเต็มโดยไม่แยกตัวพิมพ์และตัดช่องว่างหัวท้าย
         frameLayerNames: ["CutLine","กรอบ","Layout"],
         // ความสูงขั้นต่ำของกรอบเป็นเซนติเมตร (Illustrator API คืนค่า height เป็น points)

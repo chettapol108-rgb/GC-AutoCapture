@@ -175,6 +175,12 @@ Contributors and commit/PR references must be filled in when the work is committ
 
 ### Changed / ปรับปรุง
 
+- Prefix JPG and mixed PNG filenames with the DATE parsed from the EPS name,
+  including its optional shift code; use `0000` when the DATE pattern is absent.
+  - **ไทย:** เพิ่ม DATE หน้าสุดของชื่อ JPG และ PNG ภาพรวม โดยใช้ `0000` เมื่อชื่อ EPS ไม่มี DATE
+  - **Validation (2026-11-17):** Not tested. Static source and diff review only;
+    Illustrator export and image names remain unverified.
+
 - Move the ScriptUI window title and version into `CONFIG.uiTitle` and
   `CONFIG.uiVersion`; the dialog displays them as `<title> v<version>`.
   - **ไทย:** ปรับชื่อและเวอร์ชันบนหน้าต่างได้จาก CONFIG ต้นไฟล์

@@ -195,6 +195,16 @@ Batch พยายามทำ Job ถัดไปหลังข้อผิด
 - งานค้าง / วิธีตรวจต่อ: เปิดสคริปต์ใน Illustrator แล้วตรวจชื่อหน้าต่างด้วยค่าเริ่มต้นและหลังแก้สองค่าใน CONFIG
 - อ้างอิง: `CHANGELOG.md` Unreleased / Changed
 
+### KB-019 — เพิ่ม DATE หน้าชื่อไฟล์ภาพส่งออก
+
+- วันที่ / สถานะ: 2026-11-17; แก้แล้วรอตรวจใน Illustrator
+- State / หมวด: S4–S5; ชื่อไฟล์และ SKU, JPG และปลายทาง
+- อาการและหลักฐานก่อนแก้: `getDocumentInfo()` อ่าน DATE จากชื่อ EPS แล้ว แต่ `createOutputFile()` และ `exportMixedGroups()` ประกอบชื่อ JPG/PNG โดยเริ่มจาก SKU จึงไม่มี DATE ในชื่อภาพ
+- วิธีแก้: ส่ง `info.date` ผ่าน `exportFrames()` ไปยังจุดสร้างชื่อ JPG และ PNG ภาพรวม แล้วนำ DATE ไว้หน้าสุด; เมื่อไม่มี pattern ใช้ค่า `0000` ที่ parser กำหนดอยู่แล้ว
+- ผลหลังแก้ / Validation: Not tested; ตรวจ source และ diff เท่านั้น ยังไม่มีไฟล์ภาพจาก Illustrator หลังแก้
+- งานค้าง / วิธีตรวจต่อ: ส่งออก EPS สำเนาที่มี DATE พร้อมรหัสกะและที่ไม่มี DATE ในปลายทางทดสอบแยก ตรวจชื่อ JPG, PNG ภาพรวม, JPG ใน `Individual Image` และ path ใน log
+- อ้างอิง: `CHANGELOG.md` Unreleased / Changed
+
 ## งานค้างและจุดตรวจรอบถัดไป
 
 - ตัวอัปเดต NAS ใน KB-009 ยังต้องตรวจบนเครื่องที่มี `G:` และ Illustrator จริง โดยปิด Illustrator ก่อน แล้วตรวจไฟล์ปลายทางและเมนูหลังเปิดใหม่
