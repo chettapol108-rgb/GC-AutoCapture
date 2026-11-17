@@ -12,6 +12,9 @@
     // Change project defaults here. Illustrator uses 72 points per inch.
     // รวมค่าที่นักพัฒนาปรับได้ไว้ที่นี่ โดย Illustrator ใช้หน่วยพื้นฐาน 72 points ต่อหนึ่งนิ้ว
     var CONFIG = {
+        // ชื่อและเวอร์ชันที่แสดงบนแถบชื่อหน้าต่าง ScriptUI
+        uiTitle: "AutoCapture",
+        uiVersion: "1.1.0",
         // ชื่อ Layer หรือ Group กรอบ เทียบชื่อเต็มโดยไม่แยกตัวพิมพ์และตัดช่องว่างหัวท้าย
         frameLayerNames: ["CutLine","กรอบ","Layout"],
         // ความสูงขั้นต่ำของกรอบเป็นเซนติเมตร (Illustrator API คืนค่า height เป็น points)
@@ -543,10 +546,9 @@
         return text;
     }
 
-    function getJobDateFolderName(dateText, currentDate, datePatternFound) {
+    function validateJobDate(dateText, currentDate, datePatternFound) {
         if (!datePatternFound) {
-            return "0000-" + padNumber(currentDate.getMonth() + 1, 2) +
-                "-" + padNumber(currentDate.getDate(), 2);
+            return;
         }
         if (!/^\d{4}(?:\([A-Z]\))?$/i.test(dateText || "")) {
             throw new Error("ไม่พบ DATE แบบ MMDD ในชื่อ EPS: " + (dateText || "-"));
@@ -558,18 +560,6 @@
         if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
             throw new Error("DATE ในชื่อ EPS ไม่ใช่วันที่จริง: " + dateText);
         }
-        return padNumber(year, 4) + "-" + padNumber(month, 2) + "-" + padNumber(day, 2);
-    }
-
-    function ensureDateFolder(folder, dateFolderName) {
-        var destination = new Folder(folder.fsName + "/" + dateFolderName);
-        if (!destination.exists && !destination.create()) {
-            throw new Error("สร้าง Folder สำหรับ DATE ไม่สำเร็จ: " + destination.fsName + " " + destination.error);
-        }
-        if (!destination.exists) {
-            throw new Error("ไม่พบ Folder สำหรับ DATE: " + destination.fsName);
-        }
-        return destination;
     }
 
     function ensureOrderFolder(folder, orderId) {
@@ -590,6 +580,134 @@
         var stem = folder + "/" + sku + "-" + frame.orderId + "-" +
             padNumber(frame.number, CONFIG.fileNumberDigits);
         return new File(stem + ".jpg");
+    }
+
+    function collectMixedGroups(frames) {
+        var groups = [];
+        var counts = {};
+        var i = 0;
+        while (i < frames.length) {
+            var start = i;
+            var orderId = frames[i].orderId;
+            i++;
+            while (i < frames.length && frames[i].orderId === orderId &&
+                    frames[i].frame === frames[i - 1].frame + 1) {
+                i++;
+            }
+            // EmptyOID does not establish that two work items have the same order.
+            if (i - start < 2 || orderId === "EmptyOID") {
+                continue;
+            }
+            var members = [];
+            for (var j = start; j < i; j++) {
+                members.push(frames[j]);
+            }
+            groups.push({ orderId: orderId, frames: members });
+            counts[orderId] = (counts[orderId] || 0) + 1;
+        }
+        var seen = {};
+        for (var g = 0; g < groups.length; g++) {
+            var id = groups[g].orderId;
+            seen[id] = (seen[id] || 0) + 1;
+            groups[g].suffix = counts[id] > 1 ? "-" + padNumber(seen[id], 2) : "";
+        }
+        return groups;
+    }
+
+    function ensureIndividualFolder(orderFolder) {
+        var folder = new Folder(orderFolder.fsName + "/Individual Image");
+        if (!folder.exists && !folder.create()) {
+            throw new Error("สร้าง Folder Individual Image ไม่สำเร็จ: " + folder.fsName + " " + folder.error);
+        }
+        if (!folder.exists) {
+            throw new Error("ไม่พบ Folder Individual Image: " + folder.fsName);
+        }
+        return folder;
+    }
+
+    function exportMixedImage(sourceDoc, group, outputFile) {
+        var width = 0;
+        var height = 0;
+        var i;
+        for (i = 0; i < group.frames.length; i++) {
+            var bounds = group.frames[i].bounds;
+            width += bounds[2] - bounds[0];
+            height = Math.max(height, bounds[1] - bounds[3]);
+        }
+        var mixedDoc = null;
+        var exportError = null;
+        var cleanupErrors = [];
+        try {
+            mixedDoc = app.documents.add(DocumentColorSpace.RGB, width, height);
+            mixedDoc.artboards[0].artboardRect = [0, height, width, 0];
+            var left = 0;
+            for (i = 0; i < group.frames.length; i++) {
+                var frame = group.frames[i];
+                var frameWidth = frame.bounds[2] - frame.bounds[0];
+                var frameHeight = frame.bounds[1] - frame.bounds[3];
+                var placed = mixedDoc.placedItems.add();
+                placed.file = frame.outputFile;
+                placed.width = frameWidth;
+                placed.height = frameHeight;
+                placed.position = [left, height];
+                left += frameWidth;
+            }
+            var options = new ExportOptionsPNG24();
+            var scale = (CONFIG.targetDPI / 72) * 100;
+            options.antiAliasing = true;
+            options.artBoardClipping = true;
+            options.horizontalScale = scale;
+            options.verticalScale = scale;
+            options.transparency = false;
+            options.matte = true;
+            mixedDoc.exportFile(outputFile, ExportType.PNG24, options);
+        } catch (error) {
+            exportError = error;
+        } finally {
+            if (mixedDoc) {
+                try {
+                    mixedDoc.close(SaveOptions.DONOTSAVECHANGES);
+                } catch (closeError) {
+                    cleanupErrors.push("ปิดเอกสารภาพรวม: " + closeError.message);
+                }
+            }
+            try {
+                sourceDoc.activate();
+            } catch (activateError) {
+                cleanupErrors.push("กลับไปเอกสารต้นฉบับ: " + activateError.message);
+            }
+        }
+        if (exportError || cleanupErrors.length > 0) {
+            throw new Error((exportError ? exportError.message : "") +
+                (cleanupErrors.length > 0 ? " | " + cleanupErrors.join(" | ") : ""));
+        }
+    }
+
+    function exportMixedGroups(doc, frames, folder, sku, log, updateStatus) {
+        var groups = collectMixedGroups(frames);
+        for (var g = 0; g < groups.length; g++) {
+            var group = groups[g];
+            var orderFolder = ensureOrderFolder(folder, group.orderId);
+            var outputFile = new File(orderFolder.fsName + "/" + sku + "-" + group.orderId +
+                "-Mixed" + group.suffix + ".png");
+            updateStatus("Exporting mixed .png " + (g + 1) + "/" + groups.length);
+            exportMixedImage(doc, group, outputFile);
+            appendLog(log, "MIXED | OID: " + group.orderId + " | Frames=" +
+                group.frames[0].frame + "-" + group.frames[group.frames.length - 1].frame +
+                " | Output File: " + outputFile.fsName);
+            var individualFolder = ensureIndividualFolder(orderFolder);
+            for (var i = 0; i < group.frames.length; i++) {
+                var source = group.frames[i].outputFile;
+                var target = new File(individualFolder.fsName + "/" + source.name);
+                if (!source.copy(target) || !target.exists) {
+                    throw new Error("ย้าย JPG ไป Individual Image ไม่สำเร็จ: " + source.fsName + " " + source.error);
+                }
+                if (!source.remove()) {
+                    throw new Error("ลบ JPG ต้นทางหลังคัดลอกไม่สำเร็จ: " + source.fsName + " " + source.error);
+                }
+                appendLog(log, "MOVED | OID: " + group.orderId + " | JPG: " + target.fsName);
+            }
+        }
     }
 
     function formatDateTime(date, compact) {
@@ -722,6 +840,7 @@
                 // ย้ายและปรับขนาด Artboard ให้พอดีกับกรอบก่อนส่งออกแต่ละภาพ
                 artboard.artboardRect = frames[i].bounds;
                 doc.exportFile(outputFile, ExportType.JPEG, options);
+                frames[i].outputFile = outputFile;
                 log.exported++;
                 // Record completion time after Illustrator has written this JPEG.
                 appendLog(log, "EXPORTED | Frame[" + frames[i].frame +"]" + " | Work=" + frames[i].number +
@@ -750,14 +869,14 @@
         if (messages.length > 0) {
             throw new Error(messages.join("\n"));
         }
+        exportMixedGroups(doc, frames, folder, sku, log, updateStatus);
     }
 
     function executeJob(doc, folder, log, job, info, updateStatus) {
         var currentDate = new Date();
         if (!info.datePatternFound) {
             appendLog(log, "WARNING | Source=" + info.filename +
-                " | ไม่พบ pattern DATE แบบ MMDD ในชื่อ EPS; ใช้ DATE=0000 และ Folder=" +
-                getJobDateFolderName(info.date, currentDate, false));
+                " | ไม่พบ pattern DATE แบบ MMDD ในชื่อ EPS; ใช้ DATE=0000");
         }
         var frameContainer = findFrameContainer(doc);
         if (!frameContainer) {
@@ -774,7 +893,7 @@
         if (!sku) {
             throw new Error("\nไม่พบรหัส SKU ในชื่อไฟล์\nต้องมี SKU เป็นตัวอักษรอังกฤษ 1 ตัวตามด้วยเลข 3 หลัก\nตัวอย่าง N012.eps, N012-A.eps, N012-01.eps หรือ L007-N02-01.eps");
         }
-        var dateFolderName = getJobDateFolderName(info.date, currentDate, info.datePatternFound);
+        validateJobDate(info.date, currentDate, info.datePatternFound);
         var totalFrames = frames.length;
         var skippedFrames = [];
         frames = prepareExports(doc, frames, skippedFrames);
@@ -797,8 +916,7 @@
                 " | Y=" + entry.bounds[1] + " | Bounds=" + entry.bounds.join(","));
         }
         if (frames.length > 0) {
-            var dateFolder = ensureDateFolder(folder, dateFolderName);
-            exportFrames(doc, frameContainer, frames, dateFolder, sku, log, updateStatus);
+            exportFrames(doc, frameContainer, frames, folder, sku, log, updateStatus);
         }
         return frames.length > 0 ? "SUCCESS" : "ALL_SKIPPED";
     }
@@ -997,8 +1115,7 @@
 
 
     function showCaptureDialog() {
-        //Version: เวอร์ชัน
-        var dialog = new Window("dialog", "AutoCapture v1.0.0");
+        var dialog = new Window("dialog", CONFIG.uiTitle + " v" + CONFIG.uiVersion);
         dialog.orientation = "column";
         dialog.alignChildren = "fill";
 
