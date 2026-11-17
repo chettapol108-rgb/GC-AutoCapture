@@ -575,9 +575,9 @@
         return destination;
     }
 
-    // วันที่และเวลาบันทึกใน log แทนชื่อ JPG; ส่งออกซ้ำใช้ path เดิมเพื่อเขียนทับ
-    function createOutputFile(folder, sku, frame) {
-        var stem = folder + "/" + sku + "-" + frame.orderId + "-" +
+    // DATE จากชื่อ EPS นำหน้าชื่อ JPG; เวลาส่งออกบันทึกใน log และชื่อซ้ำใช้ path เดิม
+    function createOutputFile(folder, date, sku, frame) {
+        var stem = folder + "/" + date + "-" + sku + "-" + frame.orderId + "-" +
             padNumber(frame.number, CONFIG.fileNumberDigits);
         return new File(stem + ".jpg");
     }
@@ -683,12 +683,12 @@
         }
     }
 
-    function exportMixedGroups(doc, frames, folder, sku, log, updateStatus) {
+    function exportMixedGroups(doc, frames, folder, date, sku, log, updateStatus) {
         var groups = collectMixedGroups(frames);
         for (var g = 0; g < groups.length; g++) {
             var group = groups[g];
             var orderFolder = ensureOrderFolder(folder, group.orderId);
-            var outputFile = new File(orderFolder.fsName + "/" + sku + "-" + group.orderId +
+            var outputFile = new File(orderFolder.fsName + "/" + date + "-" + sku + "-" + group.orderId +
                 "-Mixed" + group.suffix + ".png");
             updateStatus("Exporting mixed .png " + (g + 1) + "/" + groups.length);
             exportMixedImage(doc, group, outputFile);
@@ -809,7 +809,7 @@
     }
 
     // ส่งออกทีละกรอบ โดยเก็บสถานะเอกสารและคืนค่าผ่าน finally เสมอเมื่อเริ่มเปลี่ยนสถานะ
-    function exportFrames(doc, frameContainer, frames, folder, sku, log, updateStatus) {
+    function exportFrames(doc, frameContainer, frames, folder, date, sku, log, updateStatus) {
         var artboard = doc.artboards[CONFIG.exportArtboardIndex];
         // เก็บค่าก่อนแก้เอกสาร เพื่อใช้ทั้งเมื่อส่งออกสำเร็จและเมื่อเกิดข้อผิดพลาด
         var state = {
@@ -836,7 +836,7 @@
             for (var i = 0; i < frames.length; i++) {
                 updateStatus("Exporting .jpg " + (i + 1) + "/" + frames.length);
                 var orderFolder = ensureOrderFolder(folder, frames[i].orderId);
-                var outputFile = createOutputFile(orderFolder, sku, frames[i]);
+                var outputFile = createOutputFile(orderFolder, date, sku, frames[i]);
                 // ย้ายและปรับขนาด Artboard ให้พอดีกับกรอบก่อนส่งออกแต่ละภาพ
                 artboard.artboardRect = frames[i].bounds;
                 doc.exportFile(outputFile, ExportType.JPEG, options);
@@ -869,7 +869,7 @@
         if (messages.length > 0) {
             throw new Error(messages.join("\n"));
         }
-        exportMixedGroups(doc, frames, folder, sku, log, updateStatus);
+        exportMixedGroups(doc, frames, folder, date, sku, log, updateStatus);
     }
 
     function executeJob(doc, folder, log, job, info, updateStatus) {
@@ -916,7 +916,7 @@
                 " | Y=" + entry.bounds[1] + " | Bounds=" + entry.bounds.join(","));
         }
         if (frames.length > 0) {
-            exportFrames(doc, frameContainer, frames, folder, sku, log, updateStatus);
+            exportFrames(doc, frameContainer, frames, folder, info.date, sku, log, updateStatus);
         }
         return frames.length > 0 ? "SUCCESS" : "ALL_SKIPPED";
     }
