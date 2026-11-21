@@ -7,6 +7,68 @@ an English description and a short Thai summary for everyone on the team.
 
 ## Unreleased / ยังไม่ออกเวอร์ชัน
 
+### Fixed / แก้ไข
+
+- Restore detailed `MODE`, `START`, `NAME` and `UI` debug milestones in the current script. Defer document-name parsing until START and skip `dialog.update()` before showing the dialog.
+  - **ไทย:** คืนจุดตรวจ debug และเลื่อนการอ่านชื่อเอกสารไปหลังกด START เพื่อติดตามอาการค้าง
+  - **Validation (2026-11-21):** Not tested; static source and diff review only. Illustrator startup and export remain unverified.
+
+### Changed / เปลี่ยน
+
+- Accept 14–18 digit-only IDs as fallback OIDs from numbered `N` Groups in `Name` when no `OID` Layer or Group exists. Keep the matching length and digit requirement for alphanumeric IDs.
+  - **ไทย:** รองรับ OID ตัวเลขล้วน 14–18 ตัวใน Group `N` ของ `Name` เมื่อไม่มี Layer/Group `OID`
+  - **Validation (2026-11-21):** Not tested; static source and diff review only. Illustrator matching and JPG output remain unverified.
+
+- Hide Layer and Group objects whose names contain `Frame` during JPG export, then restore each original visibility even when export fails.
+  - **ไทย:** ซ่อน Layer/Group ที่มีคำว่า Frame ระหว่างส่งออกและคืนค่าการแสดงเดิม
+  - **Validation (2026-11-21):** Not tested; static source and diff review only. Illustrator visibility and rendered images remain unverified.
+
+### Fixed / แก้ไข
+
+- Restore token-based SKU parsing in the current script and show the complete SKU before the final sequence. Accept `N017-01-S-01`, `N017-24-MIX-01`, and `PRE-FLX-0001-01`; remove the separate TYPE display.
+  - **ไทย:** ให้ SKU รวม S/M/L/MIX และ PRE ตามชื่อไฟล์จริง แยกเฉพาะเลขลำดับท้าย
+  - **Validation (2026-11-21):** Not tested; static source and diff review only. Illustrator output remains unverified.
+
+### Changed / เปลี่ยน
+
+- Treat every validated code segment before the final two-digit sequence as SKU. Accept `N017-01-S-01`, `N017-24-MIX-01`, and `PRE-FLX-0001-01`; include PRE in SKU and remove the separate TYPE field.
+  - **ไทย:** รวมรหัส `S/M/L/MIX` และ `PRE` ใน SKU ตามชื่อจริง และแยกเฉพาะเลขลำดับท้าย
+  - **Validation (2026-11-21):** Not tested; static source and diff review only. Illustrator output names and UI remain unverified.
+
+- Defer active document name access and filename parsing until START, so the initial dialog and mode switching can complete when that access stalls. Log each operation separately.
+  - **ไทย:** เปิดหน้าต่างและสลับโหมดโดยยังไม่อ่านชื่อเอกสาร แล้วแยกจุดตรวจเมื่อกด START
+  - **Validation (2026-11-21):** Not tested; static source and diff review only. The cause of the Illustrator stall remains unverified.
+
+- Skip `dialog.update()` during initial mode setup before the dialog is shown; retain updates after opening and add diagnostic milestones around mode setup and UI refresh.
+  - **ไทย:** แยกจุด log ตอนตั้งโหมดและไม่บังคับวาดหน้าต่างก่อนเปิด เพื่อช่วยหาจุดค้าง
+  - **Validation (2026-11-21):** Not tested; static source and diff review only. Illustrator dialog behavior remains unverified.
+
+- Write startup diagnostics immediately to the configured `G:/047-Pearl/Work/Design/SITKA/autoCapture_Debugger` folder, independent of the selected output folder.
+  - **ไทย:** ย้าย debug log ไปโฟลเดอร์ที่กำหนดบนไดรฟ์ G เพื่อบันทึกก่อนเปิดหน้าต่าง
+  - **Validation (2026-11-21):** Not tested; static source and diff review only. Access to G: and Illustrator logging remain unverified.
+
+- Write buffered startup diagnostics to `<output>/log/debugger/` after START prepares the output folder. A hang before that point cannot produce this log because the destination is not yet known.
+  - **ไทย:** ย้าย debug log ไปโฟลเดอร์ปลายทาง โดยเริ่มเขียนหลังกด START และเตรียมปลายทางสำเร็จ
+  - **Validation (2026-11-21):** Not tested; static source and diff review only.
+
+- Allow Single Mode to use the active Illustrator document regardless of its filename extension. Batch discovery continues to select EPS files.
+  - **ไทย:** ใช้ Single Mode กับเอกสารที่เปิดอยู่ได้ทุกนามสกุล
+  - **Validation (2026-11-21):** Not tested; static source and diff review only. Illustrator export remains unverified.
+
+### Added / เพิ่ม
+
+- Add milestones inside `getDocumentInfo()` after a real Illustrator debug log showed that reading the document name completed but filename parsing did not.
+  - **ไทย:** เพิ่มจุดติดตามภายในขั้นแยกชื่อเอกสารเพื่อระบุจุดค้างถัดไป
+  - **Validation (2026-11-21):** Not tested. The user-provided log confirms the prior stall boundary; the new milestones remain unverified.
+
+- Store startup diagnostics under `Desktop/log/debugger/` using `AutoCapture_Debug_YYYYMMDD_hhmmss.log` for each start time; starts in the same second append to the same file.
+  - **ไทย:** แยก debug log ตามเวลาเริ่มในโฟลเดอร์ debugger บน Desktop
+  - **Validation (2026-11-21):** Not tested; source and diff review only. Folder creation and logging in Illustrator remain unverified.
+
+- Append startup milestones to `AI_DEBUG.log` on the Desktop before the dialog opens, to help locate a startup hang. Logging is best effort and independent of the export session log.
+  - **ไทย:** เพิ่ม log ตรวจจุดค้างก่อนเปิดหน้าต่าง แม้ยังไม่ได้กด START
+  - **Validation (2026-11-21):** Not tested; static source and diff review only. Illustrator startup and Desktop log writing remain unverified.
+
 These changes describe the local working copy updated on 2026-11-03.
 They have not been committed or assigned a release version.
 SKU frame inference, Border visibility, flexible job names and export logs passed twenty-one Windows JScript mock integration test groups.
@@ -22,6 +84,22 @@ Contributors and commit/PR references must be filled in when the work is committ
 รายการด้านล่างเป็นงานที่แก้ไว้ในเครื่อง ยังไม่ออกเวอร์ชัน ผลทดสอบเดิมของ job N012-16 เป็นประวัติก่อนเพิ่ม ScriptUI ซึ่งยังพักการทดสอบตามคำขอของผู้ใช้
 
 ### Added / เพิ่ม
+
+- Recover DATE, SHOP and FN metadata from text-bound Illustrator Variables when
+  the EPS filename has an invalid date or missing SKU. Keep valid filename
+  values, reject ambiguous variable bindings, and record metadata sources in
+  `JOB INFO` before export.
+  - **ไทย:** ใช้ Variable ที่ผูกกับ TextFrame ช่วยกู้ข้อมูลเมื่อชื่อ EPS อ่าน DATE หรือ SKU ไม่ได้ พร้อมบันทึกที่มาและข้ามข้อมูลกำกวม
+  - **Validation (2026-11-20):** Not tested. Static source and diff review only;
+    Illustrator Variable bindings, UI values and output names remain unverified.
+
+- Recognize `FLX` as the SKU in trailing `FLX-0001-01` identifiers, with a
+  four-digit format and two-digit sequence. Read optional `PRE` after SHOP as
+  the job type; show `TYPE: -` when absent and record TYPE in `JOB INFO`.
+  Keep PRE out of JPG and mixed PNG filenames and preserve legacy SKU parsing.
+  - **ไทย:** รองรับงาน FLX ที่มีรหัสรูปแบบ 4 หลัก โดย PRE เป็นประเภทงานที่ไม่บังคับและไม่อยู่ในชื่อภาพ
+  - **Validation (2026-11-19):** Not tested. Static source and diff review only;
+    Illustrator status, log output and image names remain unverified.
 
 - Export adjacent, consecutively numbered frames with the same valid OID as a
   left-to-right PNG24 image at the configured DPI. Keep one `Mixed.png` per OID,
@@ -174,6 +252,36 @@ Contributors and commit/PR references must be filled in when the work is committ
   - **ไทย:** เพิ่มประวัติการเปลี่ยนแปลงสองภาษาและแบบฟอร์มสำหรับทีม
 
 ### Changed / ปรับปรุง
+
+- Show DATE, SHOP and SKU on one row in the ScriptUI diagnostic panel while
+  keeping TYPE and No. on their own rows.
+  - **ไทย:** จัด DATE, SHOP และ SKU ให้อยู่บรรทัดเดียวกันในแผงสถานะ
+  - **Validation (2026-11-21):** Not tested. Static source and diff review only;
+    ScriptUI layout in Illustrator remains unverified.
+
+- Route each job's JPGs and mixed PNGs to `<YYYYMMDD>/<OID>/` under the output
+  folder. Derive the date from the EPS `MMDD` and the computer's current year;
+  use the selected output folder directly when its name already matches the
+  job date. Otherwise reuse or create a date child folder, then route by OID.
+  Reject jobs with missing or impossible dates while later Batch jobs continue.
+  - **ไทย:** ใช้โฟลเดอร์วันที่ที่เลือกอยู่แล้วโดยไม่สร้างซ้อน จากนั้นแยกภาพตาม OID; หากยังไม่มีโฟลเดอร์วันที่จึงสร้างเพิ่ม
+  - **Validation (2026-11-19):** Not tested. Static source and diff review only;
+    Illustrator folder creation, OID routing and image export remain unverified.
+
+- Restore the ScriptUI `dialog` window and remove the persistent palette engine.
+  Close the dialog before changing Illustrator documents, then launch the script
+  again for the new active EPS. Keep the corrected output folder picker.
+  - **ไทย:** กลับมาใช้หน้าต่าง dialog; เปลี่ยนไฟล์ใน Illustrator หลังปิดหน้าต่างแล้วเปิดสคริปต์ใหม่
+  - **Validation (2026-11-19):** Not tested. Static source and diff review only;
+    Illustrator button behavior and export remain unverified.
+
+- Keep the ScriptUI window open as a modeless palette while users close and open
+  Illustrator documents. Single Mode reads the current active EPS when START is
+  pressed; reopening the script raises the existing palette. Superseded by the
+  dialog restoration above.
+  - **ไทย:** เปิดหน้าต่างค้างไว้ระหว่างเปลี่ยน EPS ได้ และกด START กับไฟล์ที่ active ล่าสุด
+  - **Validation (2026-11-19):** Not tested. Static source and diff review only;
+    Illustrator palette behavior and export remain unverified.
 
 - Prefix JPG and mixed PNG filenames with the DATE parsed from the EPS name,
   including its optional shift code; use `0000` when the DATE pattern is absent.
@@ -331,6 +439,19 @@ Contributors and commit/PR references must be filled in when the work is committ
   - **ไทย:** จัดระเบียบโค้ดและเพิ่มคำอธิบาย เพื่อให้ทีมแก้ไขต่อได้ง่าย
 
 ### Fixed / แก้ไข
+
+- Parse trailing SKU tokens individually instead of matching the whole filename with one regular expression. The user's Illustrator log stopped inside `getSku()` for a 27-character document name.
+  - **ไทย:** เปลี่ยนการอ่าน SKU ท้ายชื่อเป็นการตรวจแต่ละส่วน เพื่อลดจุดค้างที่พบ
+  - **Validation (2026-11-21):** Not tested; static source and diff review only. Illustrator rerun and output names remain unverified.
+
+- Rebuild the persistent ScriptUI palette when the script is launched again, so
+  edited callbacks replace the old window. Remove the palette activation refresh
+  that called `Window.update()` while focus was moving to its controls. Use
+  `Folder.selectDlg()` to preselect the output folder as the API requires.
+  - **ไทย:** แก้ปุ่ม START และ Browse ที่ไม่ตอบสนองหลังเปลี่ยนเป็น palette และให้เปิดหน้าต่างใหม่เมื่อเรียกสคริปต์ซ้ำ
+  - **Validation (2026-11-19):** Not tested. Static source and diff review only;
+    button interaction and export still need Illustrator verification.
+
 
 - Continue exporting an EPS whose filename has no DATE pattern by displaying
   `0000` and using `0000-MM-DD` as its folder, with the current machine month and

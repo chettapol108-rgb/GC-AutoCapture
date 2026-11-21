@@ -1,20 +1,56 @@
 #target illustrator
 
 /**
- * GC-AutoCapture: export frame bounds from an active EPS or a folder of EPS files.
+ * GC-AutoCapture: export frame bounds from an active document or a folder of EPS files.
  * Keep this file standalone and ES3-compatible for Adobe ExtendScript.
  * Developer setup, behavior and manual checks are documented in README.md.
- * ส่งออกภาพ JPG ตามขอบเขตกรอบจาก EPS ที่เปิดอยู่หรือจาก Folder แบบ Batch
+ * ส่งออกภาพ JPG ตามขอบเขตกรอบจากเอกสารที่เปิดอยู่หรือจาก Folder แบบ Batch
  * ใช้งานได้ด้วยไฟล์นี้ไฟล์เดียว โดยใช้ไวยากรณ์ ES3 ที่รองรับใน ExtendScript
  * ดูวิธีตั้งค่า แนวทางพัฒนาต่อ และรายการตรวจสอบก่อนส่งต่องานได้ที่ README.md
  */
 (function () {
+    // Buffer events if the configured debug folder cannot be written immediately.
+    var startupLogFile = null;
+    var startupLogTime = new Date();
+    var startupLogLines = [];
+    function startupLog(message) {
+        startupLogLines.push(new Date().toString() + " | " + message);
+        flushStartupLog();
+    }
+
+    function flushStartupLog() {
+        if (!startupLogFile || startupLogLines.length === 0) { return; }
+        try {
+            var file = startupLogFile;
+            file.encoding = "UTF-8";
+            if (file.open("a")) {
+                while (startupLogLines.length > 0) {
+                    if (!file.writeln(startupLogLines[0])) { break; }
+                    startupLogLines.shift();
+                }
+                file.close();
+            }
+        } catch (logError) {}
+    }
+
+    function setStartupLogFolder(path) {
+        try {
+            var debugFolder = new Folder(path);
+            if (!debugFolder.exists && !debugFolder.create()) { return; }
+            startupLogFile = new File(debugFolder.fsName + "/AutoCapture_Debug_" +
+                formatDateTime(startupLogTime, true) + ".log");
+            flushStartupLog();
+        } catch (logError) {}
+    }
+
     // Change project defaults here. Illustrator uses 72 points per inch.
     // รวมค่าที่นักพัฒนาปรับได้ไว้ที่นี่ โดย Illustrator ใช้หน่วยพื้นฐาน 72 points ต่อหนึ่งนิ้ว
     var CONFIG = {
+        // Fixed destination for diagnostics before the output folder is selected.
+        debugFolderPath: "G:/047-Pearl/Work/Design/SITKA/autoCapture_Debugger",
         // ชื่อและเวอร์ชันที่แสดงบนแถบชื่อหน้าต่าง ScriptUI
         uiTitle: "AutoCapture",
-        uiVersion: "1.1.1",
+        uiVersion: "1.2.0",
         // ชื่อ Layer หรือ Group กรอบ เทียบชื่อเต็มโดยไม่แยกตัวพิมพ์และตัดช่องว่างหัวท้าย
         frameLayerNames: ["CutLine","กรอบ","Layout"],
         // ความสูงขั้นต่ำของกรอบเป็นเซนติเมตร (Illustrator API คืนค่า height เป็น points)
@@ -36,6 +72,9 @@
         // ความกว้างของช่อง path ใน ScriptUI
         uiWidth: 520
     };
+
+    setStartupLogFolder(CONFIG.debugFolderPath);
+    startupLog("01 Script started");
 
     function normalizeFrameContainerName(name) {
         // Use an ES3-compatible expression instead of String.trim().
@@ -286,10 +325,10 @@
                         markerName === "N" + groupNumber + "_OID") {
                     result.push({ item: item, group: group, value: value, explicit: true });
                 } else if (!/^N[0-9]+[-_]OID$/.test(markerName)) {
-                    if (!(/^[A-Z0-9]{14,18}$/i.test(value) && /[A-Z]/i.test(value) && /[0-9]/.test(value))) {
+                    if (!(/^[A-Z0-9]{14,18}$/i.test(value) && /[0-9]/.test(value))) {
                         value = markerName;
                     }
-                    if (/^[A-Z0-9]{14,18}$/i.test(value) && /[A-Z]/i.test(value) && /[0-9]/.test(value)) {
+                    if (/^[A-Z0-9]{14,18}$/i.test(value) && /[0-9]/.test(value)) {
                         result.push({ item: item, group: group, value: value, explicit: false });
                     }
                 }
@@ -357,30 +396,150 @@
     }
 
     function getSku(documentName) {
-        // A lone two-digit suffix is a sequence; a letter-led suffix is a format.
-        // Numeric formats remain valid when followed by a sequence for old jobs.
-        // Date, shift and platform prefixes are not interpreted here.
-        var baseName = documentName.replace(/\.[^.]+$/, "");
-        var match = /(?:^|-)([A-Z]\d{3}(?:-(?:[A-Z]\d{0,2}|\d{1,3})-\d{2}|-[A-Z]\d{0,2}|-\d{2})?)$/i.exec(baseName);
-        if (!match) {
-            return "";
+        // Match the code at the end of the filename, preserving all SKU tokens.
+        // The last two-digit token is the file sequence when present.
+        var name = String(documentName);
+        var dot = name.lastIndexOf(".");
+        var tokens = (dot > 0 ? name.substring(0, dot) : name).split("-");
+        var last = tokens.length - 1;
+        if (last >= 3 && /^PRE$/i.test(tokens[last - 3]) && /^FLX$/i.test(tokens[last - 2]) &&
+                /^\d{4}$/.test(tokens[last - 1]) && /^\d{2}$/.test(tokens[last])) {
+            return tokens.slice(last - 3).join("-");
         }
-        // Preserve the complete identifier for the output filename.
-        return match[1];
+        if (last >= 3 && /^[A-Z]\d{3}$/i.test(tokens[last - 3]) &&
+                /^\d{2}$/.test(tokens[last - 2]) && /^(?:S|M|L|MIX)$/i.test(tokens[last - 1]) &&
+                /^\d{2}$/.test(tokens[last])) {
+            return tokens.slice(last - 3).join("-");
+        }
+        if (last >= 2 && /^PRE$/i.test(tokens[last - 2]) && /^FLX$/i.test(tokens[last - 1]) &&
+                /^\d{4}$/.test(tokens[last])) {
+            return tokens.slice(last - 2).join("-");
+        }
+        if (last >= 2 && /^[A-Z]\d{3}$/i.test(tokens[last - 2]) &&
+                /^\d{2}$/.test(tokens[last - 1]) && /^(?:S|M|L|MIX)$/i.test(tokens[last])) {
+            return tokens.slice(last - 2).join("-");
+        }
+        if (last >= 2 && /^FLX$/i.test(tokens[last - 2]) &&
+                /^\d{4}$/.test(tokens[last - 1]) && /^\d{2}$/.test(tokens[last])) {
+            return tokens.slice(last - 2).join("-");
+        }
+        if (last >= 2 && /^[A-Z]\d{3}$/i.test(tokens[last - 2]) &&
+                /^(?:[A-Z]\d{0,2}|\d{1,3})$/i.test(tokens[last - 1]) &&
+                /^\d{2}$/.test(tokens[last])) {
+            return tokens.slice(last - 2).join("-");
+        }
+        if (last >= 1 && /^FLX$/i.test(tokens[last - 1]) && /^\d{4}$/.test(tokens[last])) {
+            return tokens.slice(last - 1).join("-");
+        }
+        if (last >= 1 && /^[A-Z]\d{3}$/i.test(tokens[last - 1]) &&
+                /^(?:[A-Z]\d{0,2}|\d{2})$/i.test(tokens[last])) {
+            return tokens.slice(last - 1).join("-");
+        }
+        return /^[A-Z]\d{3}$/i.test(tokens[last]) ? tokens[last] : "";
     }
 
     function getDocumentInfo(documentName) {
+        startupLog("NAME | Before removing extension; length=" + String(documentName).length);
         var filename = String(documentName).replace(/\.[^.]+$/, "");
+        startupLog("NAME | Before finding SKU");
         var identifier = getSku(documentName);
+        startupLog("NAME | After finding SKU; before parsing SKU fields");
         var skuInfo = parseSkuForLog(identifier);
+        startupLog("NAME | After parsing SKU fields; before splitting prefix");
         var prefix = identifier ? filename.substring(0, filename.length - identifier.length).replace(/-$/, "") : filename;
         var parts = prefix ? prefix.split("-") : [];
+        startupLog("NAME | After splitting prefix; before reading DATE and SHOP");
         var datePatternFound = parts.length > 0 && /^\d{4}(?:\([A-Z]\))?$/i.test(parts[0]);
         var date = datePatternFound ? parts[0] : "0000";
         var shop = datePatternFound && parts.length > 1 && /^[A-Z0-9]+$/i.test(parts[1]) ? parts[1] : "";
+        startupLog("NAME | After reading DATE and SHOP");
         return { filename: filename, date: date, shop: shop, sku: skuInfo.sku,
-            datePatternFound: datePatternFound, skuFormat: skuInfo.format,
-            fileSequence: skuInfo.sequence, identifier: identifier };
+            datePatternFound: datePatternFound, fileSequence: skuInfo.sequence,
+            identifier: identifier };
+    }
+
+    function readTextVariable(doc, name) {
+        var variables = doc.variables || [];
+        var found = null;
+        for (var i = 0; i < variables.length; i++) {
+            if (variables[i].name !== name) {
+                continue;
+            }
+            if (found) {
+                throw new Error("พบ Variable " + name + " ซ้ำในเอกสาร");
+            }
+            found = variables[i];
+        }
+        if (!found) {
+            return "";
+        }
+        var items = found.pageItems || [];
+        var value = "";
+        for (var j = 0; j < items.length; j++) {
+            if (items[j].typename !== "TextFrame") {
+                throw new Error("Variable " + name + " ต้องผูกกับ TextFrame");
+            }
+            var text = String(items[j].contents || "").replace(/^\s+|\s+$/g, "");
+            if (text && value && text !== value) {
+                throw new Error("Variable " + name + " มีข้อความไม่ตรงกันหลายรายการ");
+            }
+            if (text) {
+                value = text;
+            }
+        }
+        return value;
+    }
+
+    function hasValidJobDate(info, currentDate) {
+        try {
+            validateJobDate(info.date, currentDate, info.datePatternFound);
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function getJobInfo(doc, currentDate) {
+        var filenameInfo = getDocumentInfo(doc.name);
+        if (filenameInfo.identifier && hasValidJobDate(filenameInfo, currentDate)) {
+            filenameInfo.metadataSource = "Document filename";
+            return filenameInfo;
+        }
+
+        var fn = filenameInfo.identifier ? "" : readTextVariable(doc, "FN");
+        var fnInfo = fn ? getDocumentInfo(fn) : null;
+        var filenameDateValid = hasValidJobDate(filenameInfo, currentDate);
+        var info = filenameInfo.identifier ? filenameInfo :
+            (fnInfo && fnInfo.identifier ? fnInfo : filenameInfo);
+        var source = info === filenameInfo ? "Document filename" : "Variable FN";
+        if (info !== filenameInfo && filenameDateValid) {
+            info.date = filenameInfo.date;
+            info.datePatternFound = true;
+            source += ", Document filename DATE";
+        }
+        var date = filenameDateValid ? "" : readTextVariable(doc, "DATE");
+        var shop = readTextVariable(doc, "SHOP");
+        if (!filenameDateValid) {
+            var variableDate = { date: date,
+                datePatternFound: /^\d{4}(?:\([A-Z]\))?$/i.test(date) };
+            if (date && hasValidJobDate(variableDate, currentDate)) {
+                info.date = date;
+                info.datePatternFound = true;
+                source += ", Variable DATE";
+            } else if (hasValidJobDate(info, currentDate)) {
+                source += ", Variable FN DATE";
+            } else if (date) {
+                info.date = date;
+                info.datePatternFound = variableDate.datePatternFound;
+                source += ", Variable DATE (invalid)";
+            }
+        }
+        if (shop) {
+            info.shop = shop;
+            source += ", Variable SHOP";
+        }
+        info.metadataSource = source;
+        return info;
     }
 
     function getOrderId(item) {
@@ -548,18 +707,35 @@
 
     function validateJobDate(dateText, currentDate, datePatternFound) {
         if (!datePatternFound) {
-            return;
+            throw new Error("ไม่พบ DATE แบบ MMDD จากชื่อเอกสารหรือ Variable: " + (dateText || "-"));
         }
         if (!/^\d{4}(?:\([A-Z]\))?$/i.test(dateText || "")) {
-            throw new Error("ไม่พบ DATE แบบ MMDD ในชื่อ EPS: " + (dateText || "-"));
+            throw new Error("ไม่พบ DATE แบบ MMDD จากชื่อเอกสารหรือ Variable: " + (dateText || "-"));
         }
         var month = Number(dateText.substring(0, 2));
         var day = Number(dateText.substring(2, 4));
         var year = currentDate.getFullYear();
         var date = new Date(year, month - 1, day);
         if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
-            throw new Error("DATE ในชื่อ EPS ไม่ใช่วันที่จริง: " + dateText);
+            throw new Error("DATE จากชื่อเอกสารหรือ Variable ไม่ใช่วันที่จริง: " + dateText);
         }
+        return padNumber(year, 4) + dateText.substring(0, 4);
+    }
+
+    function ensureDateFolder(folder, dateName) {
+        // A selected output folder may already be the date folder for this job.
+        if (String(folder.name) === dateName) {
+            return folder;
+        }
+        var destination = new Folder(folder.fsName + "/" + dateName);
+        if (!destination.exists && !destination.create()) {
+            throw new Error("สร้าง Folder สำหรับ DATE: " + dateName + " ไม่สำเร็จ: " +
+                destination.fsName + " " + destination.error);
+        }
+        if (!destination.exists) {
+            throw new Error("ไม่พบ Folder สำหรับ DATE: " + dateName + ": " + destination.fsName);
+        }
+        return destination;
     }
 
     function ensureOrderFolder(folder, orderId) {
@@ -746,14 +922,12 @@
     }
 
     function parseSkuForLog(sku) {
-        var match = /^([A-Z]\d{3})(?:-([A-Z]\d{0,2}|\d{1,3})-(\d{2})|-([A-Z]\d{0,2})|-(\d{2}))?$/i.exec(sku);
-        if (!match) {
-            return { sku: sku, format: "", sequence: "" };
+        var tokens = sku.split("-");
+        var last = tokens.length - 1;
+        if (last > 0 && /^\d{2}$/.test(tokens[last])) {
+            return { sku: tokens.slice(0, last).join("-"), sequence: tokens[last] };
         }
-        // The identifier was already validated by getSku(); use its first four
-        // characters so the SKU does not depend on a regex capture in ExtendScript.
-        return { sku: sku.substring(0, 4), format: match[2] || match[4] || "",
-            sequence: match[3] || match[5] || "" };
+        return { sku: sku, sequence: "" };
     }
 
     // เก็บ Border ทุกชั้น รวม sublayer ก่อนเริ่มเปลี่ยน visibility
@@ -765,6 +939,22 @@
             }
             if (layer.layers && layer.layers.length > 0) {
                 collectBorderLayers(layer.layers, states);
+            }
+        }
+    }
+
+    function collectFrameNamedItems(container, frameContainer, states) {
+        if (container !== frameContainer && /Frame/i.test(String(container.name || ""))) {
+            states.push({ item: container, visible: getFrameContainerVisibility(container) });
+        }
+        var layers = container.layers || [];
+        for (var i = 0; i < layers.length; i++) {
+            collectFrameNamedItems(layers[i], frameContainer, states);
+        }
+        var items = container.pageItems || [];
+        for (var j = 0; j < items.length; j++) {
+            if (items[j].parent === container && items[j].typename === "GroupItem") {
+                collectFrameNamedItems(items[j], frameContainer, states);
             }
         }
     }
@@ -793,6 +983,13 @@
                 errors.push("Border: " + borderError.message);
             }
         }
+        for (var j = 0; j < state.frameItems.length; j++) {
+            try {
+                setFrameContainerVisibility(state.frameItems[j].item, state.frameItems[j].visible);
+            } catch (frameError) {
+                errors.push("Frame name: " + frameError.message);
+            }
+        }
         try {
             // กลับไปเลือก Artboard ที่ผู้ใช้เลือกไว้ก่อนส่งออก
             doc.artboards.setActiveArtboardIndex(state.activeArtboardIndex);
@@ -816,9 +1013,13 @@
             bounds: copyBounds(artboard.artboardRect),
             frameVisible: getFrameContainerVisibility(frameContainer),
             activeArtboardIndex: doc.artboards.getActiveArtboardIndex(),
-            borderLayers: []
+            borderLayers: [],
+            frameItems: []
         };
         collectBorderLayers(doc.layers, state.borderLayers);
+        for (var layerIndex = 0; layerIndex < doc.layers.length; layerIndex++) {
+            collectFrameNamedItems(doc.layers[layerIndex], frameContainer, state.frameItems);
+        }
         var options = createExportOptions();
         var exportError = null;
         var restoreErrors = [];
@@ -832,6 +1033,9 @@
             setFrameContainerVisibility(frameContainer, false);
             for (var b = 0; b < state.borderLayers.length; b++) {
                 state.borderLayers[b].layer.visible = false;
+            }
+            for (var f = state.frameItems.length - 1; f >= 0; f--) {
+                setFrameContainerVisibility(state.frameItems[f].item, false);
             }
             for (var i = 0; i < frames.length; i++) {
                 updateStatus("Exporting .jpg " + (i + 1) + "/" + frames.length);
@@ -872,12 +1076,7 @@
         exportMixedGroups(doc, frames, folder, date, sku, log, updateStatus);
     }
 
-    function executeJob(doc, folder, log, job, info, updateStatus) {
-        var currentDate = new Date();
-        if (!info.datePatternFound) {
-            appendLog(log, "WARNING | Source=" + info.filename +
-                " | ไม่พบ pattern DATE แบบ MMDD ในชื่อ EPS; ใช้ DATE=0000");
-        }
+    function executeJob(doc, folder, log, job, info, updateStatus, currentDate) {
         var frameContainer = findFrameContainer(doc);
         if (!frameContainer) {
             throw new Error("ไม่พบ Layer หรือ Group ที่ชื่อ " + CONFIG.frameLayerNames.join(" หรือ ") + " ในไฟล์นี้");
@@ -891,9 +1090,9 @@
 
         var sku = info.identifier;
         if (!sku) {
-            throw new Error("\nไม่พบรหัส SKU ในชื่อไฟล์\nต้องมี SKU เป็นตัวอักษรอังกฤษ 1 ตัวตามด้วยเลข 3 หลัก\nตัวอย่าง N012.eps, N012-A.eps, N012-01.eps หรือ L007-N02-01.eps");
+            throw new Error("\nไม่พบรหัส SKU จากชื่อเอกสารหรือ Variable FN\nตัวอย่าง N012.eps, N017-01-S-01.eps, N017-24-MIX-01.eps หรือ PRE-FLX-0001-01.eps");
         }
-        validateJobDate(info.date, currentDate, info.datePatternFound);
+        var dateFolderName = validateJobDate(info.date, currentDate, info.datePatternFound);
         var totalFrames = frames.length;
         var skippedFrames = [];
         frames = prepareExports(doc, frames, skippedFrames);
@@ -902,9 +1101,10 @@
         job.planned = frames.length;
         job.skipped = skipped;
         log.skipped += skipped;
-        appendLog(log, "JOB INFO || FN: " + info.filename + " | DATE: " + (info.date || "-") +
-            " | SHOP: " + (info.shop || "-") + " | SKU: " + info.sku +
-            (info.skuFormat ? " | " + info.skuFormat : "") +
+        appendLog(log, "JOB INFO || Source: " + (info.metadataSource || "Document filename") +
+            " | FN: " + info.filename + " | DATE: " + (info.date || "-") +
+            " | SHOP: " + (info.shop || "-") +
+            " | SKU: " + info.sku +
             (info.fileSequence ? " | " + info.fileSequence : "") +
             " || DPI=" + CONFIG.targetDPI + " | JPEG quality=" + CONFIG.jpegQuality +
             " | Frames=" + totalFrames + " | Planned=" + frames.length + " | Skipped=" + skipped);
@@ -916,7 +1116,8 @@
                 " | Y=" + entry.bounds[1] + " | Bounds=" + entry.bounds.join(","));
         }
         if (frames.length > 0) {
-            exportFrames(doc, frameContainer, frames, folder, info.date, sku, log, updateStatus);
+            var dateFolder = ensureDateFolder(folder, dateFolderName);
+            exportFrames(doc, frameContainer, frames, dateFolder, info.date, sku, log, updateStatus);
         }
         return frames.length > 0 ? "SUCCESS" : "ALL_SKIPPED";
     }
@@ -1115,7 +1316,9 @@
 
 
     function showCaptureDialog() {
+        startupLog("02 Before creating dialog");
         var dialog = new Window("dialog", CONFIG.uiTitle + " v" + CONFIG.uiVersion);
+        startupLog("03 Dialog created");
         dialog.orientation = "column";
         dialog.alignChildren = "fill";
 
@@ -1124,10 +1327,12 @@
         modePanel.alignChildren = "left";
         var openMode = modePanel.add("radiobutton", undefined, "Single Mode: ใช้งานกับไฟล์ที่กำลังเปิด");
         var batchMode = modePanel.add("radiobutton", undefined, "Batch Mode: ใช้งานกับหลายไฟล์ => เลือก Folder ต้นทาง");
-        var hasOpenEps = app.documents.length > 0 && /\.eps$/i.test(app.activeDocument.name);
-        openMode.value = hasOpenEps;
+        startupLog("04 Before checking open documents");
+        var hasOpenDocument = app.documents.length > 0;
+        startupLog("05 After checking open documents; present=" + hasOpenDocument);
+        openMode.value = hasOpenDocument;
         batchMode.value = !openMode.value;
-        openMode.enabled = hasOpenEps;
+        openMode.enabled = hasOpenDocument;
 
         var sourcePanel = dialog.add("panel", undefined, "Folder ต้นทาง");
         sourcePanel.orientation = "column";
@@ -1181,12 +1386,14 @@
         jobLabel.characters = 20;
         var fnLabel = diagnostic.add("statictext", undefined, "FN: -");
         fnLabel.characters = 70;
-        var dateLabel = diagnostic.add("statictext", undefined, "DATE: -");
-        dateLabel.preferredSize.width = CONFIG.uiWidth + 80;
-        var shopLabel = diagnostic.add("statictext", undefined, "SHOP: -");
-        shopLabel.preferredSize.width = CONFIG.uiWidth + 80;
-        var skuLabel = diagnostic.add("statictext", undefined, "SKU: -");
-        skuLabel.preferredSize.width = CONFIG.uiWidth + 80;
+        var metadataRow = diagnostic.add("group");
+        metadataRow.orientation = "row";
+        var dateLabel = metadataRow.add("statictext", undefined, "DATE: -");
+        dateLabel.preferredSize.width = 110;
+        var shopLabel = metadataRow.add("statictext", undefined, "SHOP: -");
+        shopLabel.preferredSize.width = 170;
+        var skuLabel = metadataRow.add("statictext", undefined, "SKU: -");
+        skuLabel.preferredSize.width = 250;
         var numberLabel = diagnostic.add("statictext", undefined, "No.: -");
         numberLabel.preferredSize.width = CONFIG.uiWidth + 80;
         var stepLabel = diagnostic.add("statictext", undefined, "Current Step: WAITING ...");
@@ -1198,29 +1405,37 @@
 
         var currentInfo = null;
         var currentJob = "-";
+        var dialogShown = false;
         function showDiagnostic(info, jobName, step) {
             currentInfo = info;
             currentJob = jobName;
             var sku = info && info.identifier ? info.sku : "";
-            var format = info && info.skuFormat ? " - " + info.skuFormat : "";
             var sequence = info && info.fileSequence ? " - " + info.fileSequence : "";
             jobLabel.text = "Job: " + (jobName || "-");
             fnLabel.text = "FN: " + (info && info.filename ? info.filename : "-");
             dateLabel.text = "DATE: " + (info && info.date ? info.date : "-");
             shopLabel.text = "SHOP: " + (info && info.shop ? info.shop : "-");
-            skuLabel.text = "SKU: " + (sku ? sku + format : "-");
-            numberLabel.text = "No.: " + (sku ? sku + format + sequence : "-");
+            skuLabel.text = "SKU: " + (sku || "-");
+            numberLabel.text = "No.: " + (sku ? sku + sequence : "-");
             stepLabel.text = "Current Step: " + step;
-            try { dialog.update(); } catch (updateError) {}
+            if (dialogShown) {
+                startupLog("UI | Before dialog.update; step=" + step);
+                try { dialog.update(); } catch (updateError) {}
+                startupLog("UI | After dialog.update; step=" + step);
+            }
         }
 
         function updateMode() {
+            startupLog("MODE | Before setting panels");
             sourcePanel.enabled = batchMode.value;
             rangePanel.enabled = batchMode.value && selectSome.value;
             fileListPanel.enabled = batchMode.value;
+            startupLog("MODE | Before updating file count");
             updateFileCount();
-            showDiagnostic(openMode.value && hasOpenEps ? getDocumentInfo(app.activeDocument.name) : null,
-                openMode.value && hasOpenEps ? "1/1" : "-", "รอเริ่มงาน");
+            startupLog("MODE | Before updating diagnostic");
+            showDiagnostic(null,
+                openMode.value && hasOpenDocument ? "1/1" : "-", "รอเริ่มงาน");
+            startupLog("MODE | After updating diagnostic");
         }
         function updateFileCount() {
             if (!batchMode.value || !sourcePath.text) {
@@ -1258,7 +1473,9 @@
         sourcePath.onChange = updateFileCount;
         startEps.onChange = updateFileCount;
         endEps.onChange = updateFileCount;
+        startupLog("06 Before initial mode update");
         updateMode();
+        startupLog("07 After initial mode update");
 
         sourceBrowse.onClick = function () {
             var selected = Folder.selectDialog("เลือก Folder ที่ต้องการค้นหา EPS รวม Subfolder");
@@ -1274,7 +1491,9 @@
             } else if (app.documents.length > 0) {
                 initial = getDefaultFolder(app.activeDocument);
             }
-            var selected = Folder.selectDialog("เลือก Folder ปลายทางสำหรับ Output และ Log", initial);
+            var promptText = "เลือก Folder ปลายทางสำหรับ Output และ Log";
+            var selected = initial && initial.exists ? initial.selectDlg(promptText) :
+                Folder.selectDialog(promptText);
             if (selected) {
                 destinationPath.text = selected.fsName;
             }
@@ -1299,10 +1518,7 @@
                     return;
                 }
             } else if (app.documents.length === 0) {
-                setUiError(status, "ไม่พบ EPS ที่เปิดอยู่ใน Illustrator");
-                return;
-            } else if (!/\.eps$/i.test(app.activeDocument.name)) {
-                setUiError(status, "เอกสารที่เปิดอยู่ปัจจุบันไม่ใช่ไฟล์ EPS");
+                setUiError(status, "ไม่พบเอกสารที่เปิดอยู่ใน Illustrator");
                 return;
             }
             var destination = null;
@@ -1324,9 +1540,16 @@
             };
             startButton.enabled = false;
             cancelButton.enabled = false;
-            showDiagnostic(selection.document ? getDocumentInfo(selection.document.name) : null,
-                selection.document ? "1/1" : "-", "เริ่มประมวลผล");
             try {
+                var initialInfo = null;
+                if (selection.document) {
+                    startupLog("START | Before reading active document name");
+                    var documentName = selection.document.name;
+                    startupLog("START | After reading active document name; before parsing");
+                    initialInfo = getDocumentInfo(documentName);
+                    startupLog("START | After parsing active document name");
+                }
+                showDiagnostic(initialInfo, selection.document ? "1/1" : "-", "เริ่มประมวลผล");
                 var summary = runSelection(selection);
                 showDiagnostic(currentInfo, currentJob, "Job เสร็จสิ้น");
                 status.text = "ส่งออกเสร็จสิ้น";
@@ -1343,7 +1566,10 @@
             }
         };
         cancelButton.onClick = function () { dialog.close(0); };
+        startupLog("08 Before showing dialog");
+        dialogShown = true;
         dialog.show();
+        startupLog("09 Dialog closed");
     }
 
     function runSelectionWithLog(selection, log) {
@@ -1380,7 +1606,7 @@
             var job = { total: 0, planned: 0, skipped: 0, exportedStart: log.exported };
             var jobStatus = "FAILED";
             try {
-                selection.updateStatus(info, jobPosition, "Opening EPS...");
+                selection.updateStatus(info, jobPosition, selection.mode === "ACTIVE_EPS" ? "Using active document..." : "Opening EPS...");
                 appendLog(log,
                     "\n====================\n" +
                     " | JOB START | Source=" + sourceName+
@@ -1396,11 +1622,12 @@
                         doc.activate();
                     }
                 }
-                info = getDocumentInfo(doc.name);
+                var jobDate = new Date();
+                info = getJobInfo(doc, jobDate);
                 selection.updateStatus(info, jobPosition, "Filename Generating...");
                 jobStatus = executeJob(doc, selection.destination, log, job, info, function (step) {
                     selection.updateStatus(info, jobPosition, step);
-                });
+                }, jobDate);
                 completed++;
                 selection.updateStatus(info, jobPosition, "Export Success !");
             } catch (jobError) {
@@ -1507,6 +1734,7 @@
     try {
         showCaptureDialog();
     } catch (error) {
+        startupLog("ERROR | " + error.message);
         alert("เกิดข้อผิดพลาด: " + error.message);
     }
 }());

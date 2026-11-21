@@ -13,7 +13,7 @@
 | S2 ตรวจปลายทาง | START ตรวจ source และ destination แล้ว `ensureOutputFolder()` | path ที่เลือกและ path `.AutoCapture` จริง; หากไม่ผ่าน UI แสดงข้อผิดพลาดและยังไม่สร้าง log |
 | S3 เริ่มรอบและเปิด Job | `runSelection()` สร้าง log ใน `logs/sessions`; `RUN START`, `DISCOVERED`, `JOB START`, `BEFORE`/`AFTER` ของ `OPEN_EPS`; UI `Opening EPS...` | path log, โหมด, ลำดับ Job ในชุดที่เลือก, source EPS, เปิดอยู่เดิมหรือเปิดโดยสคริปต์ |
 | S4 ตรวจข้อมูล Job | `getDocumentInfo()`, `executeJob()`, `findFrameContainer()`, `collectFrames()`, `prepareExports()`; UI `Filename Generating...`; log `JOB INFO`, `SKIPPED` | SKU/format/sequence, container กรอบ, จำนวน Frames/Planned/Skipped, เหตุผลและพิกัดของแต่ละกรอบที่ข้าม |
-| S5 ส่งออกภาพ | `exportFrames()` และ `exportMixedGroups()`; UI `Exporting .jpg n/total` หรือ `Exporting mixed .png n/total`; log `EXPORTED`, `MIXED`, `MOVED` หลังแต่ละขั้นสำเร็จ | Frame, Work, OID, bounds, path JPG/PNG, ช่วงกรอบ, path JPG หลังย้าย; ไฟล์อยู่ใต้โฟลเดอร์ OID |
+| S5 ส่งออกภาพ | `exportFrames()` และ `exportMixedGroups()`; UI `Exporting .jpg n/total` หรือ `Exporting mixed .png n/total`; log `EXPORTED`, `MIXED`, `MOVED` หลังแต่ละขั้นสำเร็จ | Frame, Work, OID, bounds, path JPG/PNG, ช่วงกรอบ, path JPG หลังย้าย; ไฟล์อยู่ใต้โฟลเดอร์ `YYYYMMDD/OID` |
 | S6 คืนสถานะและจบ Job | `finally` เรียก `restoreDocumentState()`; `JOB END` เป็น `SUCCESS`, `ALL_SKIPPED` หรือ `FAILED`; UI `Export Success !` เมื่อ `executeJob()` คืนผล | Artboard bounds/active index และ visibility ที่คืนได้หรือคืนไม่ได้, จำนวน Exported/Skipped/Not exported, การปิด EPS ที่สคริปต์เปิด |
 | S7 จบรอบหรือผิดพลาด | log `RUN END` หรือ `ALERT ERROR`; UI `JOB DONE` หรือ `เกิดข้อผิดพลาด` | จำนวน Job ที่สำเร็จ/ผิดพลาด, path log, first error, ไฟล์ที่ส่งออกสำเร็จก่อนหน้า, เอกสารที่ active หลัง Batch |
 
@@ -205,6 +205,88 @@ Batch พยายามทำ Job ถัดไปหลังข้อผิด
 - งานค้าง / วิธีตรวจต่อ: ส่งออก EPS สำเนาที่มี DATE พร้อมรหัสกะและที่ไม่มี DATE ในปลายทางทดสอบแยก ตรวจชื่อ JPG, PNG ภาพรวม, JPG ใน `Individual Image` และ path ใน log
 - อ้างอิง: `CHANGELOG.md` Unreleased / Changed
 
+### KB-020 — เปิด ScriptUI ค้างระหว่างเปลี่ยน EPS
+
+- วันที่ / สถานะ: 2026-11-19; แก้แล้วรอตรวจใน Illustrator
+- State / หมวด: S0–S3; UI และการเลือกคิว
+- อาการและหลักฐานก่อนแก้: `showCaptureDialog()` ใช้ `Window("dialog", ...)` ซึ่งบล็อกการทำงานใน Illustrator และ `openMode.enabled` ถูกกำหนดจาก EPS ที่ active เพียงตอนสร้างหน้าต่าง
+- วิธีแก้: ใช้ `palette` ใน persistent engine, เปิดหน้าต่างเดิมเมื่อเรียกสคริปต์ซ้ำ, เปิดให้เลือก Single Mode ได้หลังเปิด EPS ใหม่ และอ่าน `app.activeDocument` ใหม่เมื่อกลับมาที่หน้าต่างและเมื่อกด START
+- ผลหลังแก้ / Validation: Not tested; ตรวจ source และ diff เท่านั้น ใน working copy ไม่มีโฟลเดอร์ `tests` จึงไม่ได้เพิ่มกรณี mock และไม่ได้รันชุดทดสอบ
+- งานค้าง / วิธีตรวจต่อ: เปิด palette ใน Illustrator, ปิด EPS เดิมและเปิด EPS ใหม่, ตรวจ Diagnostic และ START ว่าใช้ไฟล์ใหม่; ลองกรณีไม่มีเอกสาร, ไฟล์ที่ไม่ใช่ EPS, เรียกสคริปต์ซ้ำ และปิด palette โดยไม่สร้าง log
+- อ้างอิง: `CHANGELOG.md` Unreleased / Changed
+
+### KB-021 — อ่าน SKU FLX และประเภทงาน PRE
+
+- วันที่ / สถานะ: 2026-11-19; แก้แล้วรอตรวจใน Illustrator
+- State / หมวด: S4–S5; ชื่อไฟล์และ SKU, UI และ log
+- อาการและหลักฐานก่อนแก้: `1117-ALL-PRE-FLX-0001-01.eps` ไม่ผ่าน `getSku()` เพราะรับ SKU เป็นตัวอักษรหนึ่งตัวกับเลขสามหลัก; `parseSkuForLog()` ไม่รองรับ format ตัวเลขสี่หลัก และ UI/log ยังไม่มีช่องประเภทงาน
+- วิธีแก้: ให้ `getSku()` รับท้ายชื่อ `FLX-` ตามด้วย format สี่หลักและลำดับสองหลัก; ให้ `parseSkuForLog()` แยก `FLX`, `0001`, `01`; อ่าน `PRE` หลัง SHOP เป็น `jobType` เมื่อมี และแสดง `TYPE: -` เมื่องานไม่มีประเภท; ไม่ใส่ TYPE ในชื่อภาพ
+- ผลหลังแก้ / Validation: Not tested; ตรวจ source และ diff เท่านั้น ยังไม่ได้เปิด ScriptUI หรือส่งออกภาพใน Illustrator และไม่มีโฟลเดอร์ `tests` ใน working copy
+- งานค้าง / วิธีตรวจต่อ: ใช้ EPS สำเนาและปลายทางทดสอบแยก ตรวจชื่อที่มี/ไม่มี `PRE`, งาน SKU เดิม, ค่า UI/`JOB INFO`, ชื่อ JPG/PNG และชื่อผิดรูปแบบตามรายการใน README
+- อ้างอิง: `CHANGELOG.md` Unreleased / Added
+
+### KB-022 — ปุ่มใน palette ไม่ตอบสนอง
+
+- วันที่ / สถานะ: 2026-11-19; แก้จุดเสี่ยงแล้วรอตรวจใน Illustrator
+- State / หมวด: S0–S3; UI และการเลือกคิว
+- อาการและหลักฐานก่อนแก้: ผู้ใช้พบว่า START ใน Single Mode และ Browse ปลายทางกดใช้งานไม่ได้หลังเปลี่ยน ScriptUI เป็น `palette`; โค้ดเรียก `dialog.update()` จาก `onActivate`, `Window.find()` คืนหน้าต่างเดิมเมื่อเรียกสคริปต์ซ้ำ และ Browse ส่ง argument สองตัวให้ `Folder.selectDialog()`
+- สาเหตุที่ยืนยัน: `Window.find()` ทำให้ callback ของหน้าต่างเดิมค้างใน persistent engine; `Folder.selectDialog()` รองรับเพียง prompt ตามเอกสาร API ส่วนการที่ `onActivate` รบกวน click เป็นสมมติฐานจากลำดับ callback และพฤติกรรม `Window.update()`
+- วิธีแก้: ปิด palette ที่ยังเปิดเมื่อเรียกสคริปต์ซ้ำแล้วสร้างใหม่; เอา `onActivate` ที่เรียก `dialog.update()` ออก; ใช้ `initial.selectDlg()` เมื่อมี Folder ตั้งต้น โดยยังอ่านเอกสาร active เมื่อเลือก Single Mode และกด START
+- ผลหลังแก้ / Validation: Not tested; ตรวจ source และ diff เท่านั้น
+- งานค้าง / วิธีตรวจต่อ: เรียกสคริปต์ไฟล์ใหม่อีกครั้งใน Illustrator แล้วลอง Browse ปลายทาง, START ใน Single Mode และ Batch, ปิด/เปิด EPS ระหว่างรอบ และเรียกสคริปต์ซ้ำ หากยังไม่ตอบสนองให้เก็บอาการว่า radio button และปุ่ม Close กดได้หรือไม่
+- อ้างอิง: `CHANGELOG.md` Unreleased / Fixed
+
+### KB-023 — กลับมาใช้ dialog
+
+- วันที่ / สถานะ: 2026-11-19; แก้แล้วรอตรวจใน Illustrator
+- State / หมวด: S0–S3; UI และการเลือกคิว
+- อาการและหลักฐานก่อนแก้: ผู้ใช้พบว่าปุ่ม START และ Browse ใช้งานไม่ได้หลังเปลี่ยนเป็น `palette` และขอให้กลับมาใช้ `dialog`
+- วิธีแก้: ใช้ `Window("dialog", ...)` อีกครั้ง เอา `#targetengine` และการค้นหา palette เดิมออก; Single Mode กลับไปเลือกได้เมื่อมี EPS active ตอนเปิด dialog; คงการแก้ Folder picker ที่ใช้ `selectDlg()`
+- ผลหลังแก้ / Validation: Not tested; ตรวจ source และ diff เท่านั้น
+- งานค้าง / วิธีตรวจต่อ: ปิด palette เดิมที่เปิดอยู่ใน Illustrator ก่อนเรียกสคริปต์ฉบับใหม่ ตรวจ START, Browse ปลายทาง, Batch และการปิด dialog แล้วเปิด EPS ใหม่
+- อ้างอิง: `CHANGELOG.md` Unreleased / Changed; KB-020 และ KB-022 เป็นประวัติของ palette ที่ยกเลิกแล้ว
+
+### KB-024 — จัดภาพตามโฟลเดอร์วันที่และ OID
+
+- วันที่ / สถานะ: 2026-11-19; แก้แล้วรอตรวจใน Illustrator
+- State / หมวด: S4–S5; DATE, ชื่อไฟล์และปลายทางภาพ
+- อาการและหลักฐานก่อนแก้: `executeJob()` ส่ง output folder ตรงเข้า `exportFrames()` ทำให้ `ensureOrderFolder()` สร้าง `<output>/<OID>/` และ JPG/PNG ไม่มีโฟลเดอร์วันที่ แม้ `validateJobDate()` ตรวจ DATE แล้ว; DATE ที่หายยังส่งออกได้ด้วย `0000`
+- วิธีแก้: ให้ `validateJobDate()` คืนชื่อ `YYYYMMDD` จาก `MMDD` ในชื่อ EPS และปีปัจจุบันของเครื่อง พร้อมปฏิเสธ DATE ที่ขาดหรือไม่ใช่วันที่จริง; `ensureDateFolder()` ใช้โฟลเดอร์วันที่เดิมหรือสร้างใหม่ก่อนส่ง `dateFolder` เข้า `exportFrames()` เพื่อให้ JPG, PNG ภาพรวม และ `Individual Image` อยู่ใต้ `<output>/<YYYYMMDD>/<OID>/` ตาม OID ที่จับคู่ไว้
+- ผลหลังแก้ / Validation: Not tested; ตรวจ source และ diff เท่านั้น ไม่ได้รันชุดทดสอบหรือส่งออกใน Illustrator; `tests/` ไม่อยู่ใน working tree
+- งานค้าง / วิธีตรวจต่อ: ใช้ EPS สำเนาและปลายทางแยก ทดสอบวันที่ต่างกัน, โฟลเดอร์วันที่/OID ที่มีอยู่และยังไม่มี, หลาย OID ในวันเดียวกัน, DATE หายหรือไม่จริง, JPG/PNG ภาพรวมและ JPG ใน `Individual Image`, log และการทำ Batch ต่อหลัง Job ผิดพลาด
+- อ้างอิง: `CHANGELOG.md` Unreleased / Changed; เปลี่ยนกฎ path ล่าสุดใน KB-016 โดยคงประวัติเดิม
+
+### KB-025 — ไม่สร้างโฟลเดอร์วันที่ซ้อนเมื่อเลือกโฟลเดอร์วันที่
+
+- วันที่ / สถานะ: 2026-11-19; แก้แล้วรอตรวจใน Illustrator
+- State / หมวด: S5; ปลายทางภาพ
+- อาการและหลักฐานก่อนแก้: เมื่อเลือกปลายทางที่ลงท้ายด้วยวันที่ของ Job เช่น `.../20261118`, `ensureDateFolder()` สร้าง `new Folder(folder.fsName + "/" + dateName)` เสมอ จึงได้ `.../20261118/20261118/<OID>/`
+- สาเหตุที่ยืนยันจากโค้ด: helper ตรวจเฉพาะโฟลเดอร์ลูก ไม่ตรวจชื่อโฟลเดอร์ปลายทางที่เลือก
+- วิธีแก้: `ensureDateFolder()` คืน `folder` เดิมเมื่อ `folder.name` ตรงกับ `dateName`; เมื่อชื่อไม่ตรงจึงใช้หรือสร้างโฟลเดอร์วันที่ลูกก่อนแยก OID
+- ผลหลังแก้ / Validation: Not tested; ตรวจ source และ diff เท่านั้น ไม่ได้รันชุดทดสอบหรือส่งออกใน Illustrator
+- งานค้าง / วิธีตรวจต่อ: เลือกโฟลเดอร์วันที่ที่ตรงกับ Job เป็นปลายทางแล้วตรวจ JPG/PNG ใต้ `<selected>/<OID>/` โดยไม่มีวันที่ซ้อน; ตรวจการเลือกโฟลเดอร์แม่และกรณี Batch ที่มีหลายวันที่ด้วยโฟลเดอร์ทดสอบแยก
+- อ้างอิง: `CHANGELOG.md` Unreleased / Changed; ต่อจาก KB-024
+
+### KB-026 — อ่าน Variable เมื่อชื่อ EPS ให้ DATE หรือ SKU ไม่ได้
+
+- วันที่ / สถานะ: 2026-11-20; แก้แล้วรอตรวจใน Illustrator
+- State / หมวด: S4–S5; ข้อมูล Job และการตั้งชื่อภาพ
+- อาการและหลักฐานก่อนแก้: `getDocumentInfo()` อ่านจาก `doc.name` เท่านั้น; เมื่อชื่อ EPS ขาด SKU หรือ DATE ไม่ถูกต้อง `executeJob()` โยนข้อผิดพลาด แม้ในเอกสารมี Variables `FN`, `DATE`, `SHOP` ที่ผูกกับ TextFrame อยู่
+- วิธีแก้: เพิ่ม `readTextVariable()` เพื่ออ่าน `Variable.pageItems` และ `TextFrame.contents` โดยตรวจชื่อ Variable ซ้ำและข้อความที่ขัดกัน; `getJobInfo()` ใช้ค่า Variable เฉพาะเมื่อ DATE หรือ SKU จากชื่อ EPS ใช้ไม่ได้ รักษาส่วนของชื่อ EPS ที่ยังถูกต้อง และระบุแหล่งข้อมูลใน `JOB INFO`
+- ผลหลังแก้ / Validation: Not tested; ตรวจ source และ diff เท่านั้น ไม่ได้รันชุดทดสอบหรือ Illustrator
+- งานค้าง / วิธีตรวจต่อ: ใช้ EPS สำเนาที่ชื่อขาด DATE/ขาด SKU แต่ Variable ถูกต้อง, ค่า Variable ไม่จริง/ว่าง/ซ้ำ และ TextFrame ที่ผูกหลายตัวมีข้อความต่างกัน; ตรวจ Status, log, ชื่อ JPG, โฟลเดอร์วันที่ และการทำ Job ถัดไปใน Batch
+- อ้างอิง: `CHANGELOG.md` Unreleased / Added
+
+### KB-027 — จัด DATE, SHOP และ SKU ใน Status บรรทัดเดียว
+
+- วันที่ / สถานะ: 2026-11-21; แก้แล้วรอตรวจใน Illustrator
+- State / หมวด: S0–S7; UI และการเลือกคิว
+- หลักฐานก่อนแก้: `showCaptureDialog()` เพิ่ม `dateLabel`, `shopLabel` และ `skuLabel` ลงใน `diagnostic` ที่มี `orientation = "column"` โดยตรง จึงแสดงแยกบรรทัด
+- วิธีแก้: เพิ่ม `metadataRow` แบบ `row` สำหรับสามช่อง และกำหนดความกว้างแต่ละช่องเพื่อรองรับค่าระหว่าง Batch
+- ผลหลังแก้ / Validation: Not tested; ตรวจ source และ diff เท่านั้น ไม่ได้เปิด ScriptUI ใน Illustrator
+- งานค้าง / วิธีตรวจต่อ: เปิด ScriptUI ใน Illustrator และตรวจ DATE, SHOP, SKU ทั้งค่าเริ่มต้นและค่าจาก EPS หลายแบบ โดยเฉพาะ SKU แบบ FLX และ SHOP ที่ยาว ว่าไม่ถูกตัดหรือทำให้หน้าต่างล้น
+- อ้างอิง: `CHANGELOG.md` Unreleased / Changed
+
 ## งานค้างและจุดตรวจรอบถัดไป
 
 - ตัวอัปเดต NAS ใน KB-009 ยังต้องตรวจบนเครื่องที่มี `G:` และ Illustrator จริง โดยปิด Illustrator ก่อน แล้วตรวจไฟล์ปลายทางและเมนูหลังเปิดใหม่
@@ -235,3 +317,107 @@ Batch พยายามทำ Job ถัดไปหลังข้อผิด
 ```
 
 เมื่อส่งต่องาน ระบุ state ล่าสุดของแต่ละ Job ที่ค้าง, ID ปัญหา, สิ่งที่เปลี่ยน, ผลตรวจจริง และขั้นตอนถัดไปในคำตอบหรือ PR จากนั้นอัปเดต `CHANGELOG.md` สำหรับการเปลี่ยนแปลงที่มีนัยสำคัญตามรูปแบบของทีม
+## การติดตามอาการค้างก่อนเปิดหน้าต่าง — 2026-11-21
+
+- State / หมวด: เริ่มสคริปต์ก่อนแสดง ScriptUI; ผู้ใช้แจ้งว่าค้างกับบางไฟล์ก่อนเห็นหน้าต่าง
+- หลักฐานก่อนแก้: session log สร้างหลังกด START จึงไม่มีข้อมูลช่วงเริ่มต้น; สคริปต์อ่านชื่อ active document และอัปเดต UI ก่อน `dialog.show()`
+- วิธีแก้: เพิ่ม `AI_DEBUG.log` บน Desktop แบบ append พร้อมจุดก่อนและหลังสร้างหน้าต่าง อ่านเอกสาร อัปเดตโหมด และแสดง dialog; หากเขียนไม่ได้ให้ทำงานต่อ
+- ผลตรวจ: Not tested; ตรวจ source และ diff เท่านั้น
+- งานค้าง: เรียกสคริปต์กับไฟล์ที่มีอาการใน Illustrator แล้วดูหมายเลขล่าสุดใน log; ตรวจการสร้าง log บน Desktop และการแสดง dialog จริง
+
+## เปลี่ยนตำแหน่ง debug log — 2026-11-21
+
+- State / หมวด: การติดตามก่อนเปิด ScriptUI; เดิมเขียนรวมที่ `Desktop/AI_DEBUG.log`
+- วิธีแก้: สร้าง `Desktop/log/debugger/` และเขียน `AutoCapture_Debug_YYYYMMDD_hhmmss.log` ตามเวลาเริ่ม; การเริ่มในวินาทีเดียวกันเขียนต่อไฟล์เดิม
+- ผลตรวจ: Not tested; ตรวจ source และ diff เท่านั้น
+- งานค้าง: ตรวจการสร้างโฟลเดอร์ ชื่อไฟล์ และบรรทัดล่าสุดกับ EPS ที่ค้างใน Illustrator
+
+## Single Mode ไม่จำกัดนามสกุล — 2026-11-21
+
+- State / หมวด: เลือกเอกสาร active; เดิมตรวจ `.eps` ทั้งตอนเปิด dialog และกด START
+- วิธีแก้: ตรวจเพียงว่ามีเอกสารเปิดอยู่ และปรับข้อความสถานะกับแหล่ง metadata; Batch ยังค้นหา EPS
+- ผลตรวจ: Not tested; ตรวจ source และ diff เท่านั้น ไม่มีชุดทดสอบใน working copy
+- งานค้าง: ตรวจ Single Mode กับเอกสาร AI และ EPS รวมกรณีไม่มีเอกสารและชื่อหรือ Variables ไม่มี DATE/SKU ใน Illustrator
+
+## Debug log ใต้ output — 2026-11-21
+
+- State / หมวด: ตำแหน่ง startup debug log; เดิมเขียนบน Desktop ก่อนเลือกปลายทาง
+- วิธีแก้: เก็บเหตุการณ์ในหน่วยความจำและเขียนใต้ `<output>/log/debugger/` หลัง START เตรียมปลายทางสำเร็จ; session log ปัจจุบันอยู่ใต้ `<output>/logs/sessions`
+- ผลตรวจ: Not tested; ตรวจ source และ diff เท่านั้น
+- งานค้าง: ตรวจการเขียน log และเปลี่ยนปลายทางใน Illustrator; อาการค้างก่อนเลือกปลายทางจะไม่มี debug log ให้ตรวจ
+
+## Debug log ที่โฟลเดอร์กำหนด — 2026-11-21
+
+- State / หมวด: ติดตามอาการค้างก่อน dialog; การรอ output path ทำให้ไม่สามารถเขียน log ก่อนค้าง
+- วิธีแก้: กำหนด `CONFIG.debugFolderPath` เป็น `G:/047-Pearl/Work/Design/SITKA/autoCapture_Debugger` และเริ่มเขียนทันที
+- ผลตรวจ: Not tested; ตรวจ source และ diff เท่านั้น
+- งานค้าง: ตรวจการเข้าถึง G: และบรรทัดล่าสุดของ debug log ใน Illustrator โดยเฉพาะไฟล์ที่ค้าง
+
+## แยกจุดค้างระหว่างตั้งค่าโหมด — 2026-11-21
+
+- State / หมวด: ก่อนแสดง ScriptUI; log เดิมคร่อม `updateMode()` ทั้งฟังก์ชัน
+- หลักฐานก่อนแก้: `updateMode()` เรียก `showDiagnostic()` ซึ่งเรียก `dialog.update()` ก่อน `dialog.show()`; log `06`–`07` แยกจุดค้างไม่ได้
+- วิธีแก้: ข้าม `dialog.update()` ก่อนแสดง dialog และเพิ่ม log `MODE` รอบการตั้ง panel, จำนวนไฟล์, ชื่อเอกสาร และ Diagnostic พร้อม log `UI` รอบการวาดหน้าต่างหลังเปิด
+- ผลตรวจ: Not tested; ตรวจ source และ diff เท่านั้น
+- งานค้าง: เปิดไฟล์ที่เคยค้างใน Illustrator, ดูบรรทัดสุดท้ายใน debug log และสลับ Single/Batch เพื่อตรวจ panel, สถานะ และปุ่ม START
+
+## ค้างระหว่างอ่านชื่อเอกสารใน initial mode — 2026-11-21
+
+- State / หมวด: `updateMode()` ก่อนเปิด dialog
+- หลักฐานก่อนแก้: debug log จาก Illustrator หยุดที่ `MODE | Before reading document name`; บรรทัดถัดไปรวม `app.activeDocument.name` กับ `getDocumentInfo()` จึงยังแยกสาเหตุสองส่วนไม่ได้
+- วิธีแก้: เลื่อนการอ่านและแยกชื่อไปหลังกด START พร้อม log ก่อนและหลังแต่ละส่วน; `updateMode()` แสดงข้อมูลว่างจนเริ่มงาน
+- ผลตรวจ: Not tested; ตรวจ source และ diff เท่านั้น
+- งานค้าง: เปิดไฟล์เดิม ตรวจ dialog และการสลับโหมด จากนั้นกด START ในปลายทางทดสอบและดูบรรทัด `START` ล่าสุด
+
+## ค้างใน getDocumentInfo — 2026-11-21
+
+- State / หมวด: START หลังอ่านชื่อเอกสาร
+- หลักฐานก่อนแก้: log ผู้ใช้หยุดที่ `START | After reading active document name; before parsing` จึงยืนยันว่าการอ่าน `selection.document.name` ผ่านแล้ว แต่ `getDocumentInfo()` ยังไม่คืนค่า
+- วิธีแก้: เพิ่มจุด `NAME` คร่อมการตัดนามสกุล หา SKU แยก SKU และ DATE/SHOP
+- ผลตรวจ: Not tested; log เป็นหลักฐานก่อนแก้ ยังไม่ได้รันสคริปต์ที่เพิ่มจุดติดตาม
+- งานค้าง: ใช้ไฟล์ที่มีอาการตรวจบรรทัด `NAME` ล่าสุด แล้วแก้เฉพาะขั้นที่ค้าง
+
+## ค้างใน getSku — 2026-11-21
+
+- State / หมวด: แยก SKU จากชื่อเอกสารหลัง START
+- หลักฐานก่อนแก้: log ผู้ใช้หยุดที่ `NAME | Before finding SKU` สำหรับชื่อยาว 27 ตัวอักษร; จึงอยู่ใน `getSku()` แต่ยังไม่ทราบคำสั่งย่อยที่ค้าง
+- วิธีแก้: แยกชื่อเป็น token จากท้ายและตรวจแต่ละ token ด้วยรูปแบบสั้น โดยรองรับ FLX, SKU เดี่ยว, format และ sequence ตามเดิม
+- ผลตรวจ: Not tested; ตรวจ source และ diff เท่านั้น
+- งานค้าง: เรียกสคริปต์กับไฟล์เดิม แล้วตรวจว่า log ผ่าน `NAME | After finding SKU`; ตรวจชื่อ JPG และข้อมูล UI ใน Illustrator
+
+## SKU รวมรหัสท้ายและ PRE — 2026-11-21
+
+- State / หมวด: แยกชื่อไฟล์และแสดง SKU
+- หลักฐานก่อนแก้: ผู้ใช้ระบุว่า `N017-01-S`, `N017-24-MIX` และ `PRE-FLX-0001` เป็น SKU เต็ม; การแยก `format` หรือ `TYPE: PRE` ผิดความหมาย
+- วิธีแก้: รับรูปแบบเหล่านี้ใน `getSku()` และแยกเฉพาะเลขลำดับท้ายใน `parseSkuForLog()`; เอา TYPE ออกจาก UI และ JOB INFO
+- ผลตรวจ: Not tested; ตรวจ source และ diff เท่านั้น
+- งานค้าง: ตรวจชื่อไฟล์ทั้งสามแบบ รวมรูปแบบเก่า ใน Illustrator พร้อมค่า Status, JOB INFO, JPG และ PNG
+## คืนกฎ SKU เต็มใน working copy — 2026-11-21
+
+- State / หมวด: parser SKU, Status และ JOB INFO
+- หลักฐานก่อนแก้: working copy ยังใช้ regex ทั้งชื่อ, แยก format และ TYPE; ไม่รับตัวอย่าง `N017-01-S-01` หรือ `N017-24-MIX-01`
+- วิธีแก้: ตรวจ token ท้ายชื่อ, เก็บ SKU ทุกส่วนก่อนเลขลำดับท้าย, รวม PRE ใน SKU และนำ TYPE ออกจากการแสดงผล
+- ผลตรวจ: Not tested; ตรวจ source และ diff เท่านั้น
+- งานค้าง: ตรวจชื่อ JPG/PNG, Status และ JOB INFO กับไฟล์จริงใน Illustrator
+## ซ่อน Layer/Group ชื่อมี Frame ระหว่าง export — 2026-11-21
+
+- State / หมวด: export JPG และคืน visibility
+- หลักฐานก่อนแก้: โค้ดซ่อนเฉพาะกรอบที่เลือกและ Layer Border; Layer/Group อื่นที่ชื่อมี Frame ยังติดไปในภาพ
+- วิธีแก้: เก็บ visibility ของ Layer/Group ที่ชื่อมี `Frame` ทุกระดับก่อน export ซ่อนระหว่างส่งออก และคืนค่าแต่ละรายการใน `restoreDocumentState()`
+- ผลตรวจ: Not tested; ตรวจ source และ diff เท่านั้น
+- งานค้าง: ตรวจภาพ JPG และ visibility ก่อน/หลัง export สำเร็จและผิดพลาดใน Illustrator
+
+## รองรับ OID ตัวเลขล้วนใน Group N — 2026-11-21
+
+- State / หมวด: การจับคู่ OID ทางสำรองจาก Layer `Name`/`NAME`
+- หลักฐานก่อนแก้: `collectNameOrderIds()` รับรหัสทั่วไปยาว 14–18 ตัวเฉพาะเมื่อมีทั้งอักษรอังกฤษและตัวเลข ทำให้รหัสตัวเลขล้วนถูกข้าม
+- วิธีแก้: รับรหัสตัวเลขล้วนหรืออักษรอังกฤษผสมตัวเลขยาว 14–18 ตัวจาก Name หรือ contents ของ Type ใน Group `N[ตัวเลข]`; ยังคงให้ Type ชื่อ `N3-OID`/`N3_OID` มีลำดับก่อน
+- ผลตรวจ: Not tested; ตรวจ source และ diff เท่านั้น ชุดทดสอบ `tests/` ไม่มีใน working copy
+- งานค้าง: ตรวจการจับคู่และชื่อ JPG กับ OID ตัวเลขล้วน 14 และ 18 ตัวใน Illustrator รวมกรณีข้อมูลซ้ำหรืออยู่นอกช่วง
+## คืนจุดติดตาม debugger — 2026-11-21
+
+- State / หมวด: startup และการอ่านชื่อเอกสาร; working copy มีเพียง log 01–09 และอ่านชื่อก่อนเปิด dialog
+- หลักฐานก่อนแก้: log ผู้ใช้ก่อนหน้าแสดงว่าหยุดใน `getSku()` และจุด MODE/START/NAME ที่เคยเพิ่มหายจากไฟล์ปัจจุบัน
+- วิธีแก้: คืน log MODE, START, NAME และ UI; เลื่อนการอ่านชื่อไปหลังกด START และข้าม `dialog.update()` ก่อนแสดง dialog
+- ผลตรวจ: Not tested; ตรวจ source และ diff เท่านั้น
+- งานค้าง: ตรวจ log, การสลับโหมด และการส่งออกจากไฟล์ที่เคยค้างใน Illustrator
