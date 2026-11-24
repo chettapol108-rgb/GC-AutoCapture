@@ -7,13 +7,31 @@ an English description and a short Thai summary for everyone on the team.
 
 ## Unreleased / ยังไม่ออกเวอร์ชัน
 
+### Changed / เปลี่ยน
+
+- Replace the batch installer with a PowerShell updater and keep the batch file as a launcher. Stage the versioned script and an elevated updater copy on Desktop before requesting UAC, then remove known AutoCapture script names and move the new file into each Illustrator `en_US/Scripts` folder. Preserve staged files on failure.
+  - **ไทย:** เปลี่ยนตัวทำงานหลักเป็น PowerShell โดยพักไฟล์บน Desktop ก่อนขอสิทธิ์ Administrator และเก็บสำเนาไว้หากติดตั้งไม่สำเร็จ
+  - **Validation (2026-11-23):** Not tested; PowerShell parser and diff review only. UAC, NAS access and Illustrator installation remain unverified.
+
+- Export frame 001 using a valid `N1-OID` or `N1_OID` Type value in `Name` when that frame has no `-BC`/`_BC` Type marker, including documents with a separate `OID` Layer or Group. Skip duplicate, invalid, or overlapping candidates with a specific reason.
+  - **ไทย:** กรอบ 001 ที่ไม่มี BC marker ใช้ค่า `N1-OID`/`N1_OID` ใน Name ส่งออกได้ และแจ้งเหตุผลเมื่อค่าไม่ชัดเจน
+  - **Validation (2026-11-23):** Not tested; source and diff review only. Illustrator behavior remains unverified.
+
 ### Fixed / แก้ไข
+
+- Parse `MMDD-DD` as a same-month DATE range before reading filename SHOP. Accept only `SP`, `TT`, and `ALL` as filename SHOP values; preserve the range in the UI, log, and JPG name while using its first day for the output folder.
+  - **ไทย:** อ่าน `1121-22` เป็นช่วงวันที่ 21–22 และแสดง DATE ตามชื่อไฟล์ โดยไม่อ่าน `22` เป็น SHOP
+  - **Validation (2026-11-23):** Not tested; source and diff review only. Illustrator behavior remains unverified.
 
 - Restore detailed `MODE`, `START`, `NAME` and `UI` debug milestones in the current script. Defer document-name parsing until START and skip `dialog.update()` before showing the dialog.
   - **ไทย:** คืนจุดตรวจ debug และเลื่อนการอ่านชื่อเอกสารไปหลังกด START เพื่อติดตามอาการค้าง
   - **Validation (2026-11-21):** Not tested; static source and diff review only. Illustrator startup and export remain unverified.
 
 ### Changed / เปลี่ยน
+
+- Include the configured program name and version as `<name> Version <version>` in the startup debug log and export session log.
+  - **ไทย:** เพิ่มชื่อโปรแกรมและเวอร์ชันแบบสั้นในบรรทัดเริ่มต้นของ log ทั้งสองชนิด
+  - **Validation (2026-11-23):** Not tested; static source and diff review only. Illustrator log output remains unverified.
 
 - Accept 14–18 digit-only IDs as fallback OIDs from numbered `N` Groups in `Name` when no `OID` Layer or Group exists. Keep the matching length and digit requirement for alphanumeric IDs.
   - **ไทย:** รองรับ OID ตัวเลขล้วน 14–18 ตัวใน Group `N` ของ `Name` เมื่อไม่มี Layer/Group `OID`

@@ -50,7 +50,7 @@
         debugFolderPath: "G:/047-Pearl/Work/Design/SITKA/autoCapture_Debugger",
         // ชื่อและเวอร์ชันที่แสดงบนแถบชื่อหน้าต่าง ScriptUI
         uiTitle: "AutoCapture",
-        uiVersion: "1.2.0",
+        uiVersion: "1.2.1",
         // ชื่อ Layer หรือ Group กรอบ เทียบชื่อเต็มโดยไม่แยกตัวพิมพ์และตัดช่องว่างหัวท้าย
         frameLayerNames: ["CutLine","กรอบ","Layout"],
         // ความสูงขั้นต่ำของกรอบเป็นเซนติเมตร (Illustrator API คืนค่า height เป็น points)
@@ -74,7 +74,7 @@
     };
 
     setStartupLogFolder(CONFIG.debugFolderPath);
-    startupLog("01 Script started");
+    startupLog("01 Script started | " + CONFIG.uiTitle + " Version " + CONFIG.uiVersion);
 
     function normalizeFrameContainerName(name) {
         // Use an ES3-compatible expression instead of String.trim().
@@ -449,9 +449,18 @@
         var prefix = identifier ? filename.substring(0, filename.length - identifier.length).replace(/-$/, "") : filename;
         var parts = prefix ? prefix.split("-") : [];
         startupLog("NAME | After splitting prefix; before reading DATE and SHOP");
-        var datePatternFound = parts.length > 0 && /^\d{4}(?:\([A-Z]\))?$/i.test(parts[0]);
-        var date = datePatternFound ? parts[0] : "0000";
-        var shop = datePatternFound && parts.length > 1 && /^[A-Z0-9]+$/i.test(parts[1]) ? parts[1] : "";
+        var date = parts.length > 0 ? parts[0] : "";
+        var shopIndex = 1;
+        if (/^\d{4}$/.test(date) && parts.length > 1 && /^\d{2}$/.test(parts[1])) {
+            date += "-" + parts[1];
+            shopIndex = 2;
+        }
+        var datePatternFound = isJobDatePattern(date);
+        if (!datePatternFound) {
+            date = "0000";
+        }
+        var shop = datePatternFound && parts.length > shopIndex && /^(?:SP|TT|ALL)$/i.test(parts[shopIndex]) ?
+            parts[shopIndex] : "";
         startupLog("NAME | After reading DATE and SHOP");
         return { filename: filename, date: date, shop: shop, sku: skuInfo.sku,
             datePatternFound: datePatternFound, fileSequence: skuInfo.sequence,
@@ -499,6 +508,10 @@
         }
     }
 
+    function isJobDatePattern(dateText) {
+        return /^\d{4}(?:\([A-Z]\)|-\d{2})?$/i.test(dateText || "");
+    }
+
     function getJobInfo(doc, currentDate) {
         var filenameInfo = getDocumentInfo(doc.name);
         if (filenameInfo.identifier && hasValidJobDate(filenameInfo, currentDate)) {
@@ -521,7 +534,7 @@
         var shop = readTextVariable(doc, "SHOP");
         if (!filenameDateValid) {
             var variableDate = { date: date,
-                datePatternFound: /^\d{4}(?:\([A-Z]\))?$/i.test(date) };
+                datePatternFound: isJobDatePattern(date) };
             if (date && hasValidJobDate(variableDate, currentDate)) {
                 info.date = date;
                 info.datePatternFound = true;
@@ -577,6 +590,37 @@
         return true;
     }
 
+    function findFirstFrameNameOid(frameIndex, frames, names) {
+        var selected = null;
+        var count = 0;
+        for (var i = 0; i < names.length; i++) {
+            var item = names[i];
+            if (item.typename !== "TextFrame" ||
+                    !/^N1[-_]OID$/i.test(String(item.name || "").replace(/^\s+|\s+$/g, "")) ||
+                    !containsItemCenter(frames[frameIndex].bounds, item)) {
+                continue;
+            }
+            selected = item;
+            count++;
+        }
+        if (count === 0) {
+            return null;
+        }
+        if (count > 1) {
+            return { reason: "Ambiguous N1-OID in Name" };
+        }
+        for (var j = 0; j < frames.length; j++) {
+            if (j !== frameIndex && containsItemCenter(frames[j].bounds, selected)) {
+                return { reason: "Ambiguous OID / overlapping frames" };
+            }
+        }
+        var value = String(selected.contents || "").replace(/^\s+|\s+$/g, "");
+        if (!/^[A-Z0-9]*[0-9][A-Z0-9]*$/i.test(value)) {
+            return { reason: "Invalid N1-OID in Name" };
+        }
+        return { value: value };
+    }
+
     function prepareExports(doc, frames, skippedFrames) {
         var nameLayer = findNamedLayer(doc.layers, "Name", "NAME");
         var oidLayer = findNamedLayer(doc.layers, "OID");
@@ -612,14 +656,17 @@
             var hasName = false;
             var ambiguousName = false;
             var invalidBarcodeFont = false;
+            var hasBarcodeMarker = false;
             for (var j = 0; j < names.length; j++) {
                 if (!containsItemCenter(frames[i].bounds, names[j])) {
                     continue;
                 }
                 hasName = true;
-                if (names[j].typename === "TextFrame" && /[-_]bc$/i.test(String(names[j].name || "")) &&
-                        !hasRequiredBarcodeFont(names[j])) {
-                    invalidBarcodeFont = true;
+                if (/[-_]bc$/i.test(String(names[j].name || ""))) {
+                    hasBarcodeMarker = true;
+                    if (names[j].typename === "TextFrame" && !hasRequiredBarcodeFont(names[j])) {
+                        invalidBarcodeFont = true;
+                    }
                 }
                 // A marker inside overlapping frames cannot identify one export.
                 for (var k = 0; k < frames.length; k++) {
@@ -634,6 +681,21 @@
                         !hasName ? "No Name marker at export position" :
                         "Name barcode marker requires Libre Barcode 128 Text Regular" });
                 continue;
+            }
+
+            // Frame 001 can use its explicit Name OID when no barcode marker exists.
+            if (i === 0 && !hasBarcodeMarker) {
+                var firstFrameOid = findFirstFrameNameOid(i, frames, names);
+                if (firstFrameOid) {
+                    if (firstFrameOid.reason) {
+                        skippedFrames.push({ bounds: frames[i].bounds, frame: i + 1, number: number,
+                            reason: firstFrameOid.reason });
+                    } else {
+                        exports.push({ bounds: frames[i].bounds, frame: i + 1, number: number,
+                            orderId: firstFrameOid.value });
+                    }
+                    continue;
+                }
             }
 
             if (!oidLayer && !oidGroup) {
@@ -707,10 +769,10 @@
 
     function validateJobDate(dateText, currentDate, datePatternFound) {
         if (!datePatternFound) {
-            throw new Error("ไม่พบ DATE แบบ MMDD จากชื่อเอกสารหรือ Variable: " + (dateText || "-"));
+            throw new Error("ไม่พบ DATE แบบ MMDD หรือ MMDD-DD จากชื่อเอกสารหรือ Variable: " + (dateText || "-"));
         }
-        if (!/^\d{4}(?:\([A-Z]\))?$/i.test(dateText || "")) {
-            throw new Error("ไม่พบ DATE แบบ MMDD จากชื่อเอกสารหรือ Variable: " + (dateText || "-"));
+        if (!isJobDatePattern(dateText)) {
+            throw new Error("ไม่พบ DATE แบบ MMDD หรือ MMDD-DD จากชื่อเอกสารหรือ Variable: " + (dateText || "-"));
         }
         var month = Number(dateText.substring(0, 2));
         var day = Number(dateText.substring(2, 4));
@@ -718,6 +780,14 @@
         var date = new Date(year, month - 1, day);
         if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
             throw new Error("DATE จากชื่อเอกสารหรือ Variable ไม่ใช่วันที่จริง: " + dateText);
+        }
+        if (dateText.length === 7 && dateText.charAt(4) === "-") {
+            var endDay = Number(dateText.substring(5, 7));
+            var endDate = new Date(year, month - 1, endDay);
+            if (endDay < day || endDate.getFullYear() !== year ||
+                    endDate.getMonth() !== month - 1 || endDate.getDate() !== endDay) {
+                throw new Error("DATE ช่วงวันที่ไม่ถูกต้อง: " + dateText);
+            }
         }
         return padNumber(year, 4) + dateText.substring(0, 4);
     }
@@ -1157,7 +1227,8 @@
         if (!log.file.close()) {
             throw new Error("ปิด log ไม่สำเร็จ: " + log.file.fsName + " " + log.file.error);
         }
-        appendLog(log, "START | [Mode] " + mode + " | Output=" + folder.fsName +
+        appendLog(log, "START | " + CONFIG.uiTitle + " Version " + CONFIG.uiVersion +
+            " | [Mode] " + mode + " | Output=" + folder.fsName +
             " | Times use the computer's local timezone");
         return log;
     }
