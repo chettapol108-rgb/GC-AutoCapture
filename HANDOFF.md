@@ -1,5 +1,13 @@
 # คลังสมองและ handoff — GC-AutoCapture
 
+## เลือกช่วง Batch ด้วย SKU (2026-11-26)
+
+- **State/หมวด:** S1 ค้นหาและเลือก EPS; UI และการเลือกคิว
+- **หลักฐานก่อนแก้:** `findEpsBoundary()` เทียบชื่อ EPS ทั้งชื่อและฟ้องเมื่อชื่อซ้ำในหลาย Subfolder; ช่อง START/END ระบุชื่อไฟล์
+- **วิธีแก้:** ให้ช่อง START SKU / END SKU เทียบ SKU จาก `getSku()` และ `parseSkuForLog()` แบบไม่แยกตัวพิมพ์เล็กใหญ่; START เลือกไฟล์แรกและ END เลือกไฟล์สุดท้ายที่ตรงกันตามลำดับ path
+- **ผลตรวจจริง:** Not tested; ตรวจ source และ diff เท่านั้น ยังไม่ได้รันชุดทดสอบหรือเปิดใน Illustrator
+- **งานค้าง:** ตรวจ ScriptUI กับไฟล์ตัวอย่างทั้ง SKU ซ้ำ ขอบเขตว่าง ตัวพิมพ์เล็ก/ใหญ่ และช่วงกลับด้าน
+
 ## เพิ่มกฎกรอบ 001 จาก N1-OID (2026-11-23)
 
 - **State/หมวด:** S4 ตรวจข้อมูล Job; การจับคู่ Name marker และ OID
@@ -17,7 +25,7 @@
 | State | จุดเข้า / หลักฐาน | สิ่งที่ต้องส่งต่อเมื่อหยุดหรือผิดพลาด |
 | --- | --- | --- |
 | S0 รอเลือกงาน | `showCaptureDialog()` แสดง Single/Batch; `Current Step: WAITING ...` แล้ว `รอเริ่มงาน` | โหมด, EPS ที่เปิดอยู่, source/destination ที่เลือก; การปิดหน้าต่างก่อน START ไม่มี log |
-| S1 ค้นหาและเลือก EPS | Batch ใช้ `collectEpsFiles()` และ `getBatchFileSelection()`; UI แสดงจำนวนและ `[x]`/`[ ]` | path ต้นทาง, จำนวนที่พบ/เลือก, Select all หรือ Select range, START/END EPS, ข้อความ error หากชื่อซ้ำ/ไม่พบ/ลำดับกลับด้าน |
+| S1 ค้นหาและเลือก EPS | Batch ใช้ `collectEpsFiles()` และ `getBatchFileSelection()`; UI แสดงจำนวนและ `[x]`/`[ ]` | path ต้นทาง, จำนวนที่พบ/เลือก, Select all หรือ Select range, START/END SKU, ข้อความ error หากไม่พบ SKU หรือลำดับกลับด้าน |
 | S2 ตรวจปลายทาง | START ตรวจ source และ destination แล้ว `ensureOutputFolder()` | path ที่เลือกและ path `.AutoCapture` จริง; หากไม่ผ่าน UI แสดงข้อผิดพลาดและยังไม่สร้าง log |
 | S3 เริ่มรอบและเปิด Job | `runSelection()` สร้าง log ใน `logs/sessions`; `RUN START`, `DISCOVERED`, `JOB START`, `BEFORE`/`AFTER` ของ `OPEN_EPS`; UI `Opening EPS...` | path log, โหมด, ลำดับ Job ในชุดที่เลือก, source EPS, เปิดอยู่เดิมหรือเปิดโดยสคริปต์ |
 | S4 ตรวจข้อมูล Job | `getDocumentInfo()`, `executeJob()`, `findFrameContainer()`, `collectFrames()`, `prepareExports()`; UI `Filename Generating...`; log `JOB INFO`, `SKIPPED` | SKU/format/sequence, container กรอบ, จำนวน Frames/Planned/Skipped, เหตุผลและพิกัดของแต่ละกรอบที่ข้าม |
@@ -31,7 +39,7 @@ Batch พยายามทำ Job ถัดไปหลังข้อผิด
 
 | หมวด | อาการ / หลักฐานที่ควรเก็บ | จุดตรวจและแนวแก้ |
 | --- | --- | --- |
-| UI และการเลือกคิว | ปุ่ม/รายการ EPS ผิด, จำนวนที่เลือกไม่ตรง, START/END หาไม่พบ | S0–S2; ตรวจโหมด, path, ชื่อซ้ำข้าม subfolder, ลำดับ path; ดู `showCaptureDialog()`, `getBatchFileSelection()` |
+| UI และการเลือกคิว | ปุ่ม/รายการ EPS ผิด, จำนวนที่เลือกไม่ตรง, START/END หาไม่พบ | S0–S2; ตรวจโหมด, path, SKU ซ้ำข้าม subfolder, ลำดับ path; ดู `showCaptureDialog()`, `getBatchFileSelection()` |
 | ชื่อไฟล์และ SKU | `SKU: undefined`, ไม่พบ SKU, JPG ชื่อผิด | S4; เก็บชื่อ EPS เต็มและ `JOB INFO`; ดู `getSku()`, `getDocumentInfo()`, `parseSkuForLog()`, `createOutputFile()` |
 | กรอบและลำดับ | ไม่พบกรอบ, กรอบเล็กถูกนับ, เลขท้ายไม่ตรง | S4; เก็บชื่อ container, height, bounds และลำดับ `Frame`; ดู `findFrameContainer()`, `collectFrames()` และเกณฑ์ `minFrameHeightCm` |
 | Name/OID และฟอนต์ | `SKIPPED`, `EmptyOID`, กรอบซ้อน, barcode font ผิด | S4; เก็บชื่อ/contents/ชนิดวัตถุ, bounds ของ marker และ OID, เหตุผล `SKIPPED`; ดู `prepareExports()` |

@@ -1,6 +1,13 @@
 GC-AutoCapture History
 บันทึกเวอร์ชันของ GC-AutoCapture
 
+
+
+v1.2.2
+
++ Changed: ปรับ Batch Mode การระบุช่วงไฟล์ EPS ใช้เลข SKU ได้
+
+.
 ==========================================
 v1.2.1
 

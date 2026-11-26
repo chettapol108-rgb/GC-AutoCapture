@@ -1113,6 +1113,8 @@
                 var outputFile = createOutputFile(orderFolder, date, sku, frames[i]);
                 // ย้ายและปรับขนาด Artboard ให้พอดีกับกรอบก่อนส่งออกแต่ละภาพ
                 artboard.artboardRect = frames[i].bounds;
+                // Refresh Illustrator before rendering each frame for export.
+                app.redraw();
                 doc.exportFile(outputFile, ExportType.JPEG, options);
                 frames[i].outputFile = outputFile;
                 log.exported++;
@@ -1252,35 +1254,31 @@
         });
     }
 
-    function findEpsBoundary(files, input) {
-        var name = String(input).replace(/^\s+|\s+$/g, "");
-        if (!name) {
+    function findSkuBoundary(files, input, useLast) {
+        var sku = String(input).replace(/^\s+|\s+$/g, "").toLowerCase();
+        if (!sku) {
             return { index: -1, error: "" };
-        }
-        if (!/\.eps$/i.test(name)) {
-            name += ".eps";
         }
         var index = -1;
         for (var i = 0; i < files.length; i++) {
-            if (String(files[i].name).toLowerCase() === name.toLowerCase()) {
-                if (index >= 0) {
-                    return { index: -1, error: "!!! ERROR !!! พบชื่อ EPS ซ้ำใน Subfolder: " + name };
-                }
+            var identifier = getSku(files[i].name);
+            if (identifier && parseSkuForLog(identifier).sku.toLowerCase() === sku) {
+                if (!useLast) { return { index: i, error: "" }; }
                 index = i;
             }
         }
-        return { index: index, error: index < 0 ? "!!! ERROR !!! ไม่พบ EPS ชื่อ: " + name : "" };
+        return { index: index, error: index < 0 ? "!!! ERROR !!! ไม่พบ SKU: " + input : "" };
     }
 
-    function getBatchFileSelection(folder, startName, endName) {
+    function getBatchFileSelection(folder, startSku, endSku) {
         var files = [];
         collectEpsFiles(folder, files);
         sortFilesByPath(files);
-        var start = findEpsBoundary(files, startName);
-        var end = findEpsBoundary(files, endName);
+        var start = findSkuBoundary(files, startSku, false);
+        var end = findSkuBoundary(files, endSku, true);
         var error = start.error || end.error;
         if (!error && start.index >= 0 && end.index >= 0 && start.index > end.index) {
-            error = "START EPS อยู่หลัง END EPS ตามลำดับ path";
+            error = "START SKU อยู่หลัง END SKU ตามลำดับ path";
         }
         var selected = [];
         var first = -1;
@@ -1421,16 +1419,16 @@
         selectAll.value = true;
         selectSome.value = false;
 
-        var rangePanel = dialog.add("panel", undefined, "โปรดระบุ:  ชื่อไฟล์ <เริ่มต้น>   ,   ชื่อไฟล์ <สุดท้าย>");
+        var rangePanel = dialog.add("panel", undefined, "โปรดระบุ:  SKU <เริ่มต้น>   ,   SKU <สุดท้าย>");
         // var rangePanel = dialog.add("panel", undefined, "");
         rangePanel.orientation = "row";
         rangePanel.alignChildren = ["left", "center"];
-        rangePanel.add("statictext", undefined, "START EPS: ");
-        var startEps = rangePanel.add("edittext", undefined, "");
-        startEps.preferredSize.width = 190;
-        rangePanel.add("statictext", undefined, "END EPS: ");
-        var endEps = rangePanel.add("edittext", undefined, "");
-        endEps.preferredSize.width = 190;
+        rangePanel.add("statictext", undefined, "START SKU: ");
+        var startSku = rangePanel.add("edittext", undefined, "");
+        startSku.preferredSize.width = 190;
+        rangePanel.add("statictext", undefined, "END SKU: ");
+        var endSku = rangePanel.add("edittext", undefined, "");
+        endSku.preferredSize.width = 190;
         var fileCount = dialog.add("statictext", undefined, "จำนวน EPS ที่พบ: - | จำนวนที่ถูกเลือก: -");
         fileCount.characters = 80;
         var fileListPanel = dialog.add("panel", undefined,
@@ -1522,7 +1520,7 @@
             }
             try {
                 var batch = getBatchFileSelection(folder,
-                    selectSome.value ? startEps.text : "", selectSome.value ? endEps.text : "");
+                    selectSome.value ? startSku.text : "", selectSome.value ? endSku.text : "");
                 fileCount.text = "จำนวน EPS ที่พบ: " + batch.total + " | จำนวนที่ถูกเลือก: " +
                     (batch.error ? "- (" + batch.error + ")" : batch.files.length);
                 fileList.text = getEpsTreeText(folder, batch);
@@ -1542,8 +1540,8 @@
         selectAll.onClick = updateSourceSelection;
         selectSome.onClick = updateSourceSelection;
         sourcePath.onChange = updateFileCount;
-        startEps.onChange = updateFileCount;
-        endEps.onChange = updateFileCount;
+        startSku.onChange = updateFileCount;
+        endSku.onChange = updateFileCount;
         startupLog("06 Before initial mode update");
         updateMode();
         startupLog("07 After initial mode update");
@@ -1603,8 +1601,8 @@
                 mode: batchMode.value ? "BATCH" : "ACTIVE_EPS",
                 source: source,
                 batchFiles: batchFiles,
-                startEps: selectSome.value ? startEps.text : "",
-                endEps: selectSome.value ? endEps.text : "",
+                startSku: selectSome.value ? startSku.text : "",
+                endSku: selectSome.value ? endSku.text : "",
                 destination: destination,
                 document: batchMode.value ? null : app.activeDocument,
                 updateStatus: showDiagnostic
@@ -1657,7 +1655,7 @@
             files = selection.batchFiles.files;
             appendLog(log, "DISCOVERED | Source=" + selection.source.fsName +
                 " | EPS files=" + selection.batchFiles.total + " | Selected=" + files.length +
-                " | START EPS=" + (selection.startEps || "-") + " | END EPS=" + (selection.endEps || "-"));
+                " | START SKU=" + (selection.startSku || "-") + " | END SKU=" + (selection.endSku || "-"));
             if (files.length === 0) {
                 failed = 1;
                 firstError = "ไม่พบไฟล์ EPS ใน Folder หรือ Subfolder ที่เลือก";

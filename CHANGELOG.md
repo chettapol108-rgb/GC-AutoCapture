@@ -9,6 +9,10 @@ an English description and a short Thai summary for everyone on the team.
 
 ### Changed / เปลี่ยน
 
+- Select Batch range boundaries by SKU instead of EPS filename. Match case-insensitively, use the first matching file for START and the last for END, and keep inclusive path ordering.
+  - **ไทย:** เลือกช่วง Batch ด้วย SKU โดยไม่แยกตัวพิมพ์เล็กใหญ่; SKU ซ้ำใช้ไฟล์แรกเป็นจุดเริ่มและไฟล์สุดท้ายเป็นจุดจบ
+  - **Validation (2026-11-26):** Not tested; source and diff review only. Illustrator ScriptUI behavior remains unverified.
+
 - Replace the batch installer with a PowerShell updater and keep the batch file as a launcher. Stage the versioned script and an elevated updater copy on Desktop before requesting UAC, then remove known AutoCapture script names and move the new file into each Illustrator `en_US/Scripts` folder. Preserve staged files on failure.
   - **ไทย:** เปลี่ยนตัวทำงานหลักเป็น PowerShell โดยพักไฟล์บน Desktop ก่อนขอสิทธิ์ Administrator และเก็บสำเนาไว้หากติดตั้งไม่สำเร็จ
   - **Validation (2026-11-23):** Not tested; PowerShell parser and diff review only. UAC, NAS access and Illustrator installation remain unverified.
