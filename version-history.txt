@@ -6,7 +6,8 @@ GC-AutoCapture History
 v1.2.2
 
 + Changed: ปรับ Batch Mode การระบุช่วงไฟล์ EPS ใช้เลข SKU ได้
-
++ Fixed: พบปัญหาที่ N017-MIX: stroke ของ text ไม่แสดงในรูป | เพิ่มขั้นตอนการหมุน text และให้ Adobe Illustrator ประมวลผลข้อมูลใหม่
+ 
 .
 ==========================================
 v1.2.1

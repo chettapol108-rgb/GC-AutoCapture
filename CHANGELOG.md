@@ -7,6 +7,12 @@ an English description and a short Thai summary for everyone on the team.
 
 ## Unreleased / ยังไม่ออกเวอร์ชัน
 
+### Fixed / แก้ไข
+
+- Refresh every live text frame by rotating it 180 degrees and back, then redraw before JPG export to update text stroke rendering.
+  - **ไทย:** กระตุ้นให้ Illustrator คำนวณ stroke ของ live text ใหม่ก่อนส่งออก โดยหมุนข้อความกลับตำแหน่งเดิมและวาดหน้าจอใหม่
+  - **Validation (2026-11-26):** Not tested; source and diff review only. Illustrator rendering remains unverified.
+
 ### Changed / เปลี่ยน
 
 - Select Batch range boundaries by SKU instead of EPS filename. Match case-insensitively, use the first matching file for START and the last for END, and keep inclusive path ordering.

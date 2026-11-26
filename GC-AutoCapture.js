@@ -1075,6 +1075,24 @@
         return errors;
     }
 
+    function refreshLiveText(doc) {
+        // Transform every live TextFrame once to force Illustrator to recalculate its stroke.
+        var textFrames = doc.textFrames;
+        for (var i = 0; i < textFrames.length; i++) {
+            var textFrame = textFrames[i];
+            var rotated = false;
+            try {
+                textFrame.rotate(180, true, false, false, false);
+                rotated = true;
+            } finally {
+                if (rotated) {
+                    textFrame.rotate(-180, true, false, false, false);
+                }
+            }
+        }
+        app.redraw();
+    }
+
     // ส่งออกทีละกรอบ โดยเก็บสถานะเอกสารและคืนค่าผ่าน finally เสมอเมื่อเริ่มเปลี่ยนสถานะ
     function exportFrames(doc, frameContainer, frames, folder, date, sku, log, updateStatus) {
         var artboard = doc.artboards[CONFIG.exportArtboardIndex];
@@ -1099,6 +1117,7 @@
             // whose bounds we resize, then restore the user's selection.
             // การตัดขอบ JPG อิง Artboard ที่ active จึงต้องเลือกตัวเดียวกับที่ปรับขอบเขต
             doc.artboards.setActiveArtboardIndex(CONFIG.exportArtboardIndex);
+            refreshLiveText(doc);
             // ซ่อน Layer หรือ Group กรอบ เพื่อไม่ให้เส้นกรอบติดไปในภาพที่ส่งออก
             setFrameContainerVisibility(frameContainer, false);
             for (var b = 0; b < state.borderLayers.length; b++) {
